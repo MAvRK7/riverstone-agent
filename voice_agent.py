@@ -1,12 +1,12 @@
 import os
 import asyncio
 import json
-from datetime import datetime, timezone, timedelta
-from fastapi import FastAPI, HTTPException
+import string
+from datetime import datetime, timedelta, timezone
+from fastapi import FastAPI
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import google.generativeai as genai
-import requests
 
 load_dotenv()
 
@@ -31,13 +31,8 @@ KNOWLEDGE_PACK = {
     "completion_target": "Q4 2027",
     "display_suite": "123 Swan St, Richmond",
     "amenities": [
-        "Rooftop pool",
-        "Gym",
-        "Co-working lounge",
-        "Residents’ dining",
-        "Parcel lockers",
-        "EV chargers",
-        "Bike storage"
+        "Rooftop pool", "Gym", "Co-working lounge", "Residents’ dining",
+        "Parcel lockers", "EV chargers", "Bike storage"
     ],
     "pricing": {
         "1-bed": {"from": 585000, "car": 65000},
@@ -53,14 +48,15 @@ KNOWLEDGE_PACK = {
     "handoff_email": "sales@riverstoneplace.example"
 }
 
-# Appointment slots (AEST)
+# Appointment slots with ISO datetime
 APPOINTMENT_SLOTS = [
-    "Mon 10:00", "Mon 13:00", "Mon 16:00",
-    "Tue 10:00", "Tue 13:00", "Tue 16:00",
-    "Wed 10:00", "Wed 13:00", "Wed 16:00",
-    "Thu 10:00", "Thu 13:00", "Thu 16:00",
-    "Fri 10:00", "Fri 13:00", "Fri 16:00",
-    "Sat 10:00", "Sat 12:00"
+    # Example ISO format for AEST (UTC+10)
+    "2025-09-26T10:00:00+10:00", "2025-09-26T13:00:00+10:00", "2025-09-26T16:00:00+10:00",
+    "2025-09-27T10:00:00+10:00", "2025-09-27T13:00:00+10:00", "2025-09-27T16:00:00+10:00",
+    "2025-09-28T10:00:00+10:00", "2025-09-28T13:00:00+10:00", "2025-09-28T16:00:00+10:00",
+    "2025-09-29T10:00:00+10:00", "2025-09-29T13:00:00+10:00", "2025-09-29T16:00:00+10:00",
+    "2025-09-30T10:00:00+10:00", "2025-09-30T13:00:00+10:00", "2025-09-30T16:00:00+10:00",
+    "2025-10-04T10:00:00+10:00", "2025-10-04T12:00:00+10:00"
 ]
 
 # ---------------------------
@@ -86,16 +82,26 @@ class CallRequest(BaseModel):
     preferred_slot: str = None
 
 # ---------------------------
+# Helpers
+# ---------------------------
+def sanitize_message(msg: str) -> str:
+    # Lowercase, remove punctuation, strip extra spaces
+    translator = str.maketrans("", "", string.punctuation)
+    return msg.lower().translate(translator).strip()
+
+def iso_to_readable(iso_str: str) -> str:
+    dt = datetime.fromisoformat(iso_str)
+    return dt.strftime("%a %d %b %H:%M AEST")
+
+# ---------------------------
 # Booking + Logging
 # ---------------------------
-async def book_appointment(name, phone, email, slot, mode="video", notes=""):
-    # Generate booking_id
-    dt = datetime.now(timezone(timedelta(hours=10)))
-    booking_id = f"RS-{dt.strftime('%Y%m%d-%H%M%S')}"
+async def book_appointment(name, phone, email, slot_iso, mode="video", notes=""):
+    booking_id = f"RS-{datetime.now(timezone(timedelta(hours=10))).strftime('%Y%m%d-%H%M%S')}"
     return {
         "ok": True,
         "booking_id": booking_id,
-        "message": f"Booked {slot} ({mode})"
+        "message": f"Booked {iso_to_readable(slot_iso)} ({mode})"
     }
 
 async def log_lead(data):
@@ -110,24 +116,54 @@ async def log_lead(data):
 # LLM Response
 # ---------------------------
 async def generate_agent_response(messages):
-    prompt = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in messages])
-    try:
-        response = genai.generate_text(model="gemini-1.5-flash", prompt=prompt)
-        return response.text
-    except Exception as e:
-        return "I'm having trouble processing that. Please repeat."
+    """
+    Generate a response grounded strictly in the Riverstone Place knowledge pack.
+    Handles FAQs, objections, appointment guidance, and compliance.
+    """
+    user_msg = ""
+    for m in messages:
+        if m.get("role") == "user":
+            user_msg = sanitize_message(m.get("content", ""))
+            break
+
+    # Compliance/unsubscribe
+    if any(word in user_msg for word in ["stop", "unsubscribe"]):
+        return "No worries, you will not be contacted again."
+
+    # FAQs / objections
+    if "strata" in user_msg:
+        return f"The indicative strata for apartments ranges from {KNOWLEDGE_PACK['strata']['1-bed']} to {KNOWLEDGE_PACK['strata']['3-bed']} per year. We cannot guarantee exact costs."
+    if "completion" in user_msg or "finish" in user_msg:
+        return f"Construction is targeted to start in late 2025 and complete by {KNOWLEDGE_PACK['completion_target']} (indicative)."
+    if "finance" in user_msg or "loan" in user_msg:
+        return f"I’m not able to provide personal finance advice, but we can refer you to a qualified broker via {KNOWLEDGE_PACK['handoff_email']}."
+    if "foreign" in user_msg or "firb" in user_msg or "stamp duty" in user_msg:
+        return f"Foreign buyers may face extra approvals/taxes; I’m not able to advise, but we can refer you to a specialist via {KNOWLEDGE_PACK['handoff_email']}."
+    if "rental guarantee" in user_msg or "yield" in user_msg:
+        return "We do not provide rental guarantees. We can refer you to a property manager for market guidance."
+
+    # Use assistant recommendation if available
+    assistant_msg = ""
+    for m in messages:
+        if m.get("role") == "assistant":
+            assistant_msg = m.get("content", "")
+            break
+
+    if not assistant_msg.strip():
+        return "I’m not sure about that—would you like a human specialist to follow up?"
+
+    return assistant_msg
 
 # ---------------------------
 # Core Endpoint
 # ---------------------------
 @app.post("/call")
 async def handle_call(call: CallRequest):
-    # Early unsubscribe compliance
-    if "stop" in call.message.lower() or "unsubscribe" in call.message.lower():
+    msg_clean = sanitize_message(call.message)
+    if any(word in msg_clean for word in ["stop", "unsubscribe"]):
         return {"response": "No worries, you will not be contacted again.", "compliance_flags": ["unsubscribe_request"]}
 
-    # Qualify user
-    recommendation = ""
+    # Qualification & recommendation
     if call.budget < 650000:
         recommendation = "1-bed, parking optional"
     elif 650000 <= call.budget <= 1100000:
@@ -135,19 +171,19 @@ async def handle_call(call: CallRequest):
     else:
         recommendation = "Include 3-bed, confirm two car spaces"
 
-    # Pick appointment slot
-    slot = call.preferred_slot or APPOINTMENT_SLOTS[0]
+    # Appointment
+    slot_iso = call.preferred_slot or APPOINTMENT_SLOTS[0]
+    mode = "display-suite" if "T10" in slot_iso or "T12" in slot_iso else "video"  # Sat vs weekday
 
-    # Book appointment
     booking = await book_appointment(
-        call.name, call.phone, call.email, slot,
-        mode="display-suite" if "Sat" in slot else "video",
+        call.name, call.phone, call.email, slot_iso,
+        mode=mode,
         notes=f"{call.beds}-bed, budget {call.budget}, finance {call.finance_status}"
     )
 
     # Generate LLM response
     messages = [
-        {"role": "system", "content": "You are a friendly Riverstone Place sales agent."},
+        {"role": "system", "content": "You are a Riverstone Place sales agent. Use ONLY the knowledge pack to answer."},
         {"role": "user", "content": call.message},
         {"role": "assistant", "content": f"Based on your budget, I recommend: {recommendation}. Appointment: {booking['message']}"}
     ]
@@ -167,8 +203,8 @@ async def handle_call(call: CallRequest):
             "suburbs": call.preferred_suburbs
         },
         "booking": {
-            "slot": slot,
-            "mode": "display-suite" if "Sat" in slot else "video",
+            "slot": slot_iso,
+            "mode": mode,
             "booking_id": booking["booking_id"],
             "status": "confirmed" if booking["ok"] else "failed"
         },
@@ -179,7 +215,7 @@ async def handle_call(call: CallRequest):
     await log_lead(lead_data)
 
     return {"response": agent_reply, "booking": booking, "lead_logged": True}
-    
+
 # ---------------------------
 # Healthcheck
 # ---------------------------
