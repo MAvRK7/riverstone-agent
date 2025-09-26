@@ -1,15 +1,16 @@
 videosdk==0.2.5
-google-generativeai==0.8.3
-python-dotenv==1.0.1
-PyJWT==2.9.0
-requests==2.32.3
-aiohttp==3.9.5
-websockets==12.0
-deepgram-sdk==3.2.5
-elevenlabs==1.6.0
+google-generativeai
+python-dotenv
+PyJWT
+requests
+aiohttp
+websockets
+deepgram-sdk
+elevenlabs
 onnxruntime==1.23.0
-fastapi==0.115.2
-uvicorn==0.30.6
+fastapi
+uvicorn
+
 
 
 
