@@ -1,4 +1,4 @@
-videosdk==0.0.92
+videosdk==0.2.5
 google-generativeai==0.8.3
 python-dotenv==1.0.1
 PyJWT==2.9.0
@@ -10,4 +10,5 @@ elevenlabs==1.6.0
 onnxruntime==1.19.2
 fastapi==0.115.2
 uvicorn==0.30.6
+
 
