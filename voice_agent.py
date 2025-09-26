@@ -1,277 +1,196 @@
 import os
-import time
 import asyncio
 import json
-import functools
-import jwt
 from datetime import datetime, timezone, timedelta
-from concurrent.futures import ThreadPoolExecutor
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 from dotenv import load_dotenv
 import google.generativeai as genai
-from videosdk.agents import Agent, AgentSession, CascadingPipeline, JobContext, ConversationFlow, RoomOptions
-from videosdk.plugins.silero import SileroVAD
-from videosdk.plugins.turn_detector import TurnDetector, pre_download_model
-from videosdk.plugins.deepgram import DeepgramSTT
-from videosdk.plugins.elevenlabs import ElevenLabsTTS
-from videosdk.agents.llm import LLM
+import requests
 
 load_dotenv()
 
 # ---------------------------
-# Pre-download ONNX models
+# CONFIG
 # ---------------------------
-try:
-    pre_download_model()
-except Exception as e:
-    print(f"Warning: Could not pre-download models: {e}. Continuing...")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
-# ---------------------------
-# Gemini LLM
-# ---------------------------
-class GeminiLLM(LLM):
-    def __init__(self, api_key=None, model_name="gemini-1.5-flash"):
-        super().__init__()
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        if not self.api_key:
-            raise ValueError("Missing GEMINI_API_KEY in environment")
-        genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel(model_name)
+if not GEMINI_API_KEY or not DEEPGRAM_API_KEY or not ELEVENLABS_API_KEY:
+    raise ValueError("Set GEMINI_API_KEY, DEEPGRAM_API_KEY, ELEVENLABS_API_KEY in .env")
 
-    async def generate(self, messages):
-        try:
-            prompt_parts = []
-            for msg in messages:
-                role = getattr(msg, 'role', msg.get('role', 'user') if isinstance(msg, dict) else 'user')
-                content = getattr(msg, 'content', msg.get('content', '') if isinstance(msg, dict) else str(msg))
-                prompt_parts.append(f"{role.capitalize()}: {content}")
-            prompt = "\n".join(prompt_parts)
-            
-            loop = asyncio.get_event_loop()
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                response = await loop.run_in_executor(
-                    executor,
-                    functools.partial(self.model.generate_content, prompt)
-                )
-            from videosdk.agents.llm import ChatMessage
-            return ChatMessage(role="assistant", content=response.text)
-        except Exception as e:
-            print(f"Error in Gemini generation: {e}")
-            from videosdk.agents.llm import ChatMessage
-            return ChatMessage(role="assistant", content="I'm having trouble processing that. Please repeat.")
+genai.configure(api_key=GEMINI_API_KEY)
 
-# ---------------------------
-# Mock booking API functions
-# ---------------------------
-async def book_appointment(name, phone, email, slot_iso, mode, notes=""):
-    try:
-        dt = datetime.fromisoformat(slot_iso.replace('Z', '+00:00'))
-        booking_id = f"RS-{dt.strftime('%Y%m%d-%H%M')}"
-        formatted_date = dt.strftime("%a %d %b %H:%M AEST")
-        return {"ok": True, "booking_id": booking_id, "message": f"Booked {formatted_date}"}
-    except Exception as e:
-        return {"ok": False, "error": str(e), "message": "Sorry, there was an issue with the booking system."}
+# Knowledge pack from PDF
+KNOWLEDGE_PACK = {
+    "project": "Riverstone Place",
+    "suburb": "Abbotsford, VIC",
+    "developer": "Harbourline Developments",
+    "builder": "Apex Construct",
+    "completion_target": "Q4 2027",
+    "display_suite": "123 Swan St, Richmond",
+    "amenities": [
+        "Rooftop pool",
+        "Gym",
+        "Co-working lounge",
+        "Residents’ dining",
+        "Parcel lockers",
+        "EV chargers",
+        "Bike storage"
+    ],
+    "pricing": {
+        "1-bed": {"from": 585000, "car": 65000},
+        "2-bed": {"from": 845000, "car": "1 included"},
+        "3-bed": {"from": 1280000, "car": "2 included"}
+    },
+    "deposit": "10% on exchange, 1% pilot holding allowed",
+    "strata": {
+        "1-bed": "2.8–3.6k/yr",
+        "2-bed": "3.6–4.6k/yr",
+        "3-bed": "4.8–6.2k/yr"
+    },
+    "handoff_email": "sales@riverstoneplace.example"
+}
 
-async def log_lead(data):
-    try:
-        timestamp = datetime.now(timezone(timedelta(hours=10))).isoformat()  # AEST
-        log_entry = {"timestamp": timestamp, **data}
-        print("=== LEAD LOG ===")
-        print(json.dumps(log_entry, indent=2))
-        print("================")
-        return {"ok": True, "logged": True}
-    except Exception as e:
-        print(f"Error logging lead: {e}")
-        return {"ok": False, "error": str(e)}
+# Appointment slots (AEST)
+APPOINTMENT_SLOTS = [
+    "Mon 10:00", "Mon 13:00", "Mon 16:00",
+    "Tue 10:00", "Tue 13:00", "Tue 16:00",
+    "Wed 10:00", "Wed 13:00", "Wed 16:00",
+    "Thu 10:00", "Thu 13:00", "Thu 16:00",
+    "Fri 10:00", "Fri 13:00", "Fri 16:00",
+    "Sat 10:00", "Sat 12:00"
+]
 
 # ---------------------------
-# Riverstone Agent
+# FastAPI Setup
 # ---------------------------
-agent_instructions = """You are a friendly sales agent for Riverstone Place, a fictional apartment development in Abbotsford, VIC, Australia. Your goal is to qualify buyers, answer FAQs from the provided knowledge only, handle objections gracefully, and book a 15-min appointment (video or display-suite). Speak naturally in Australian English, be interruptible, and keep responses concise (under 30 seconds per turn).
-
-**Knowledge Pack (Use ONLY this; never bluff or add info. If unsure, say: 'I'm not sure about that—would you like a human specialist to follow up?'):**
-- Project: Riverstone Place, Suburb: Abbotsford, VIC.
-- Developer: Harbourline Developments. Builder: Apex Construct.
-- Completion: Construction start target late 2025; completion targeted Q4 2027 (indicative).
-- Amenities: Rooftop pool, gym, co-working lounge, residents' dining, parcel lockers, EV chargers, bike storage.
-- Sustainability: 7.5+ NatHERS target; solar-assisted common power; green tariff option.
-- Display Suite: 123 Swan St, Richmond — Sat/Sun 10:00–16:00; weekdays by appointment.
-- Handoff Email: sales@riverstoneplace.example (use for referrals).
-- Indicative inventory & pricing (do NOT promise exact stock): 1-Bed (50–55 m²): from $585k, optional car +$65k (limited); 2-Bed (75–85 m²): from $845k, 1 car included (most); 3-Bed (105–120 m²): from $1.28m, 2 cars included (limited).
-- Deposit: 10% on exchange. Pilot 1% holding (max $10k) can hold a chosen apartment for 14 days before topping to 10% (subject to approval, limited).
-- Indicative strata (not a quote): 1-Bed ~$2.8–3.6k/yr; 2-Bed ~$3.6–4.6k/yr; 3-Bed ~$4.8–6.2k/yr.
-- Common Q&A:
-  - Construction start target late 2025; completion targeted Q4 2027 (indicative).
-  - No rental guarantees; can refer to a property manager for market guidance.
-  - Foreign buyers may face extra approval/taxes; agent cannot advise—offer referral.
-  - Finance: We can refer to a broker; no personal finance advice.
-  - Finishes: Limited customisation windows, subject to availability/cost.
-  - Parking: Limited for 1-Beds and paid extra; not guaranteed.
-
-**Recommendation Logic:**
-- Budget < $650k: Steer to 1-Bed; warn parking is limited/extra.
-- $650k–$1.1m: 1- or 2-Bed; confirm beds/parking/timeline.
-- > $1.1m: Include 3-Bed; confirm two car spaces.
-
-**Appointment Slots (Always offer 2-3 concrete options in AEST; prefer display-suite on Sat):**
-- Mon–Fri: 10:00, 13:00, 16:00 (video or display-suite)
-- Sat: 10:00, 12:00 (display-suite preferred)
-
-**Required Behaviors:**
-- Start: Greet warmly: "G'day, thanks for calling Riverstone Place sales. How can I help with your apartment enquiry today?"
-- Qualify early: Collect name, mobile, email, budget band, beds, parking need, timeframe, owner-occ vs investor, finance status, preferred suburb(s).
-- Handle objections from knowledge only.
-- Book appointments and confirm details.
-- Recognize "STOP/unsubscribe" and offer professional referrals.
-- Handle silence, mishears, and escalations gracefully.
-
-**Tools Available:**
-- book_appointment(name, phone, email, slot_iso, mode, notes) - Use for confirmed bookings
-- log_lead(data) - Use at end of call with lead summary
-
-**Important:** Stay in character, be natural and conversational, and only use the provided knowledge."""
-
-class RiverstoneAgent(Agent):
-    def __init__(self):
-        super().__init__(instructions=agent_instructions)
-        self.lead_data = {}
-
-    async def on_enter(self):
-        await self.session.say("G'day, thanks for calling Riverstone Place sales. How can I help with your apartment enquiry today?")
-
-    async def on_exit(self):
-        if self.lead_data:
-            await log_lead(self.lead_data)
-        await self.session.say("Thanks for your interest in Riverstone Place. Have a great day!")
-
-    async def handle_booking(self, name, phone, email, slot_iso, mode, notes=""):
-        result = await book_appointment(name, phone, email, slot_iso, mode, notes)
-        self.lead_data["booking"] = {
-            "slot_iso": slot_iso,
-            "mode": mode,
-            "booking_id": result.get("booking_id", ""),
-            "status": "confirmed" if result.get("ok") else "failed"
-        }
-        return result
-
-    async def on_message(self, message):
-        user_message = message.get('content', '').lower() if isinstance(message, dict) else str(message).lower()
-        if any(word in user_message for word in ['stop', 'unsubscribe', 'remove', 'no more']):
-            self.lead_data['compliance_flags'] = self.lead_data.get('compliance_flags', []) + ['unsubscribe_request']
-            await self.session.say("No worries, I'll make sure you're not contacted again. Thanks for your time.")
-            return
-        if not user_message.strip() or user_message in ['', 'uh', 'um', 'hmm']:
-            await self.session.say("Are you still there? How can I help you with Riverstone Place today?")
-            return
-        return await super().on_message(message)
-
-    async def store_lead_data(self, summary, qualification, compliance_flags=None):
-        if compliance_flags is None:
-            compliance_flags = []
-        self.lead_data.update({
-            "summary": summary,
-            "qualification": qualification,
-            "compliance_flags": compliance_flags,
-            "caller_cli": "+614XXXXXXX",
-            "transcript_url": "https://placeholder-transcript-url.com",
-            "recording_url": "https://placeholder-recording-url.com"
-        })
-        return await log_lead(self.lead_data)
+app = FastAPI(title="Riverstone Voice Agent")
 
 # ---------------------------
-# Generate fresh VideoSDK token dynamically
+# Models
 # ---------------------------
-def generate_videosdk_token():
-    API_KEY = os.getenv("VIDEOSDK_API_KEY")
-    API_SECRET = os.getenv("VIDEOSDK_API_KEY_SECRET")
-    ROOM_ID = "riverstone-sales-room"
+class CallRequest(BaseModel):
+    name: str
+    phone: str
+    email: str
+    message: str
+    budget: int
+    beds: int
+    parking: int
+    timeframe: str
+    owner_occ: bool
+    finance_status: str
+    preferred_suburbs: list
+    preferred_slot: str = None
 
-    if not API_KEY or not API_SECRET:
-        raise ValueError("Set VIDEOSDK_API_KEY and VIDEOSDK_API_SECRET in .env")
-
-    payload = {
-        "apikey": API_KEY,
-        "room": ROOM_ID,
-        "type": "app",
-        "exp": int(time.time()) + 3600  # valid for 1 hour
+# ---------------------------
+# Booking + Logging
+# ---------------------------
+async def book_appointment(name, phone, email, slot, mode="video", notes=""):
+    # Generate booking_id
+    dt = datetime.now(timezone(timedelta(hours=10)))
+    booking_id = f"RS-{dt.strftime('%Y%m%d-%H%M%S')}"
+    return {
+        "ok": True,
+        "booking_id": booking_id,
+        "message": f"Booked {slot} ({mode})"
     }
 
-    token = jwt.encode(payload, API_SECRET, algorithm="HS256")
-    return ROOM_ID, token
+async def log_lead(data):
+    timestamp = datetime.now(timezone(timedelta(hours=10))).isoformat()
+    log_entry = {"timestamp": timestamp, **data}
+    print("=== LEAD LOG ===")
+    print(json.dumps(log_entry, indent=2))
+    print("================")
+    return {"ok": True, "logged": True}
 
 # ---------------------------
-# Entrypoint
+# LLM Response
 # ---------------------------
-async def start_session():
-    print("🚀 Initializing Riverstone Place Voice Agent...")
+async def generate_agent_response(messages):
+    prompt = "\n".join([f"{m['role'].capitalize()}: {m['content']}" for m in messages])
+    try:
+        response = genai.generate_text(model="gemini-1.5-flash", prompt=prompt)
+        return response.text
+    except Exception as e:
+        return "I'm having trouble processing that. Please repeat."
 
-    # Validate other API keys
-    required_vars = ["GEMINI_API_KEY", "DEEPGRAM_API_KEY", "ELEVENLABS_API_KEY"]
-    for var in required_vars:
-        if not os.getenv(var):
-            raise ValueError(f"Missing required environment variable: {var}")
+# ---------------------------
+# Core Endpoint
+# ---------------------------
+@app.post("/call")
+async def handle_call(call: CallRequest):
+    # Early unsubscribe compliance
+    if "stop" in call.message.lower() or "unsubscribe" in call.message.lower():
+        return {"response": "No worries, you will not be contacted again.", "compliance_flags": ["unsubscribe_request"]}
 
-    # Generate token dynamically
-    room_id, videosdk_token = generate_videosdk_token()
-    print(f"✅ Room ID: {room_id}")
-    print(f"✅ Generated VideoSDK token")
+    # Qualify user
+    recommendation = ""
+    if call.budget < 650000:
+        recommendation = "1-bed, parking optional"
+    elif 650000 <= call.budget <= 1100000:
+        recommendation = "1- or 2-bed, confirm beds/parking/timeline"
+    else:
+        recommendation = "Include 3-bed, confirm two car spaces"
 
-    agent = RiverstoneAgent()
-    conversation_flow = ConversationFlow(agent)
+    # Pick appointment slot
+    slot = call.preferred_slot or APPOINTMENT_SLOTS[0]
 
-    # Initialize pipeline
-    pipeline = CascadingPipeline(
-        stt=DeepgramSTT(
-            api_key=os.getenv("DEEPGRAM_API_KEY"),
-            model="nova-2",
-            language="en-AU"
-        ),
-        llm=GeminiLLM(),
-        tts=ElevenLabsTTS(
-            api_key=os.getenv("ELEVENLABS_API_KEY"),
-            model="eleven_flash_v2_5"
-        ),
-        vad=SileroVAD(threshold=0.35),
-        turn_detector=TurnDetector(threshold=0.8)
+    # Book appointment
+    booking = await book_appointment(
+        call.name, call.phone, call.email, slot,
+        mode="display-suite" if "Sat" in slot else "video",
+        notes=f"{call.beds}-bed, budget {call.budget}, finance {call.finance_status}"
     )
-    print("✅ Pipeline created successfully")
 
-    session = AgentSession(agent=agent, pipeline=pipeline, conversation_flow=conversation_flow)
+    # Generate LLM response
+    messages = [
+        {"role": "system", "content": "You are a friendly Riverstone Place sales agent."},
+        {"role": "user", "content": call.message},
+        {"role": "assistant", "content": f"Based on your budget, I recommend: {recommendation}. Appointment: {booking['message']}"}
+    ]
+    agent_reply = await generate_agent_response(messages)
 
-    # Connect to VideoSDK
-    room_options = RoomOptions(room_id=room_id, auth_token=videosdk_token)
-    context = JobContext(room_options=room_options)
-    await context.connect()
-    print("✅ Connected to VideoSDK")
+    # Log lead
+    lead_data = {
+        "caller_cli": call.phone,
+        "summary": f"{call.name}, {call.beds}-bed, budget {call.budget}, finance {call.finance_status}",
+        "qualification": {
+            "budget_band": f"{call.budget}",
+            "beds": call.beds,
+            "parking": call.parking,
+            "owner_occ": call.owner_occ,
+            "timeframe": call.timeframe,
+            "finance_status": call.finance_status,
+            "suburbs": call.preferred_suburbs
+        },
+        "booking": {
+            "slot": slot,
+            "mode": "display-suite" if "Sat" in slot else "video",
+            "booking_id": booking["booking_id"],
+            "status": "confirmed" if booking["ok"] else "failed"
+        },
+        "compliance_flags": [],
+        "transcript_url": "https://placeholder-transcript-url.com",
+        "recording_url": "https://placeholder-recording-url.com"
+    }
+    await log_lead(lead_data)
 
-    print("🎯 Voice agent starting...")
-    await session.start()
-    await session.wait_until_finished()
-
-if __name__ == "__main__":
-    print("🚀 Starting Riverstone Place Voice Agent...")
-    asyncio.run(start_session())
-
-from fastapi import FastAPI
-import uvicorn
-import threading
-
-app = FastAPI()
-
+    return {"response": agent_reply, "booking": booking, "lead_logged": True}
+    
+# ---------------------------
+# Healthcheck
+# ---------------------------
 @app.get("/")
 def healthcheck():
     return {"status": "ok", "message": "Riverstone Agent is running ✅"}
 
-def run_fastapi():
-    import os
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
-
+# ---------------------------
+# Run via Uvicorn for Render
+# ---------------------------
 if __name__ == "__main__":
-    # Start FastAPI in a separate thread
-    threading.Thread(target=run_fastapi, daemon=True).start()
-
-    # Start your main async agent loop
-    import asyncio
-    asyncio.run(start_session())
-
-
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
