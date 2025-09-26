@@ -37,10 +37,3 @@ This project implements a voice-enabled AI agent for Riverstone Place, leveragin
 5. Run the application:
    ```bash
    python voice_agent.py
-
-
-
-
-
-   
-
