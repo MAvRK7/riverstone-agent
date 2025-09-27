@@ -4,8 +4,6 @@ import requests
 import streamlit as st
 from dotenv import load_dotenv
 from io import BytesIO
-
-# gTTS fallback
 from gtts import gTTS
 
 # ElevenLabs
@@ -110,7 +108,7 @@ if submitted:
     # --------------------------
     tts_played = False
 
-    # Try ElevenLabs first
+    # ElevenLabs first
     if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID:
         try:
             client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
@@ -139,7 +137,15 @@ if submitted:
         except Exception as e:
             st.error(f"gTTS TTS failed: {e}")
 
-    # Optional: show booking info
+    # --------------------------
+    # Show booking info nicely
+    # --------------------------
     if "booking" in result:
-        st.subheader("Booking Details")
-        st.json(result["booking"])
+        st.subheader("Booking Confirmation")
+        booking = result["booking"]
+        st.markdown(f"- **Booking ID:** {booking.get('booking_id')}")
+        st.markdown(f"- **Slot:** {booking.get('slot')}")
+        st.markdown(f"- **Mode:** {booking.get('mode')}")
+        st.markdown(f"- **Status:** {booking.get('status')}")
+        if booking.get("message"):
+            st.markdown(f"- **Message:** {booking.get('message')}")
