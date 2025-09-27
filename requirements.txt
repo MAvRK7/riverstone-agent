@@ -7,4 +7,5 @@ Pillow>=10.0.0
 fastapi
 uvicorn
 google-generativeai
+pyttsx3
 
