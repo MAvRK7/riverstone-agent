@@ -63,5 +63,5 @@ It uses:
 6. Run the Streamlit frontend:
 
    ```bash
-   streamlit run app.py
+   python -m streamlit run "app.py"
 
