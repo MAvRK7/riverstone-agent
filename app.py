@@ -3,7 +3,7 @@ import os
 import requests
 import streamlit as st
 from dotenv import load_dotenv
-from io import BytesIO
+import tempfile
 import logging
 
 # Configure logging to output to Streamlit logs
@@ -143,11 +143,16 @@ if submitted:
     # Fallback to gTTS
     if not tts_played:
         try:
-            tts = gTTS(text=agent_text, lang="en")
-            audio_buffer = BytesIO()
-            tts.write_to_fp(audio_buffer)
-            audio_buffer.seek(0)
-            st.audio(audio_buffer.read(), format="audio/mp3")
+            # Truncate text if too long (gTTS has limits)
+            max_length = 200
+            if len(agent_text) > max_length:
+                agent_text = agent_text[:max_length] + "..."
+            # Use tempfile to save and read audio
+            with tempfile.NamedTemporaryFile(delete=True, suffix=".mp3") as fp:
+                tts = gTTS(text=agent_text, lang="en")
+                tts.save(fp.name)
+                fp.seek(0)
+                st.audio(fp.read(), format="audio/mp3")
         except Exception as e:
             st.error("Sorry, we couldn’t play the audio. Please try again later.")
             logger.error(f"gTTS TTS failed: {str(e)}")
