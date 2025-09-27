@@ -75,18 +75,11 @@ MAX_REQUESTS = 5       # allowed requests
 WINDOW_SECONDS = 60    # in seconds
 
 def check_rate_limit(client_id: str) -> bool:
-    """Return True if within limit, False if exceeded."""
     now = time.time()
     window_start = now - WINDOW_SECONDS
-
-    # prune old requests
-    request_log[client_id] = [
-        ts for ts in request_log[client_id] if ts > window_start
-    ]
-
+    request_log[client_id] = [ts for ts in request_log[client_id] if ts > window_start]
     if len(request_log[client_id]) >= MAX_REQUESTS:
-        return False  # over limit
-
+        return False
     request_log[client_id].append(now)
     return True
 
@@ -158,10 +151,14 @@ def iso_to_readable(iso_str: str) -> str:
 
 async def book_appointment(name, phone, email, slot_iso, mode="video", notes=""):
     booking_id = f"RS-{datetime.now(timezone(timedelta(hours=10))).strftime('%Y%m%d-%H%M%S')}"
+    slot_readable = iso_to_readable(slot_iso) if slot_iso else "N/A"
     return {
         "ok": True,
         "booking_id": booking_id,
-        "message": f"Booked {iso_to_readable(slot_iso)} ({mode})"
+        "slot": slot_iso or "N/A",
+        "mode": mode,
+        "status": "confirmed",
+        "message": f"Booked {slot_readable} ({mode})"
     }
 
 # ---------------------------
@@ -174,11 +171,9 @@ async def generate_agent_response(messages):
             user_msg = sanitize_message(m.get("content", ""))
             break
 
-    # Compliance/unsubscribe
     if any(word in user_msg for word in ["stop", "unsubscribe"]):
         return "No worries, you will not be contacted again."
 
-    # FAQs / objections
     if "strata" in user_msg:
         return f"The indicative strata for apartments ranges from {KNOWLEDGE_PACK['strata']['1-bed']} to {KNOWLEDGE_PACK['strata']['3-bed']} per year. We cannot guarantee exact costs."
     if "completion" in user_msg or "finish" in user_msg:
@@ -190,7 +185,6 @@ async def generate_agent_response(messages):
     if "rental guarantee" in user_msg or "yield" in user_msg:
         return "We do not provide rental guarantees. We can refer you to a property manager for market guidance."
 
-    # Use assistant recommendation if available
     assistant_msg = ""
     for m in messages:
         if m.get("role") == "assistant":
@@ -257,12 +251,7 @@ async def handle_call(call: CallRequest, request: Request):
             "finance_status": call.finance_status,
             "suburbs": call.preferred_suburbs
         },
-        "booking": {
-            "slot": slot_iso,
-            "mode": mode,
-            "booking_id": booking["booking_id"],
-            "status": "confirmed" if booking["ok"] else "failed"
-        },
+        "booking": booking,
         "compliance_flags": [],
         "transcript_url": "https://placeholder-transcript-url.com",
         "recording_url": "https://placeholder-recording-url.com"
