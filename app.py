@@ -146,8 +146,8 @@ if submitted:
     # Display booking info
     # --------------------------
     if "booking" in result:
-        st.subheader("Booking Confirmation")
         booking = result["booking"]
+        st.subheader("Booking Confirmation")
         st.markdown(f"**Booking ID:** {booking.get('booking_id', 'N/A')}")
         st.markdown(f"**Slot:** {booking.get('slot', 'N/A')}")
         st.markdown(f"**Mode:** {booking.get('mode', 'N/A')}")
