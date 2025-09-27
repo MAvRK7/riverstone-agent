@@ -4,6 +4,9 @@ import requests
 import streamlit as st
 from dotenv import load_dotenv
 from io import BytesIO
+from datetime import datetime
+
+# gTTS fallback
 from gtts import gTTS
 
 # ElevenLabs
@@ -67,6 +70,16 @@ with st.form("user_input_form"):
     submitted = st.form_submit_button("Send")
 
 # --------------------------
+# Helper: format ISO datetime
+# --------------------------
+def iso_to_readable(iso_str):
+    try:
+        dt = datetime.fromisoformat(iso_str)
+        return dt.strftime("%a %d %b %H:%M %p AEST")
+    except Exception:
+        return iso_str
+
+# --------------------------
 # Send request to backend
 # --------------------------
 if submitted:
@@ -92,6 +105,7 @@ if submitted:
             resp.raise_for_status()
             result = resp.json()
             agent_text = result.get("response", "No response from agent.")
+            booking = result.get("booking", {})
         except requests.exceptions.HTTPError as e:
             st.error(f"HTTP Error: {e}")
             st.error(f"Response Text: {resp.text}")
@@ -108,7 +122,7 @@ if submitted:
     # --------------------------
     tts_played = False
 
-    # ElevenLabs first
+    # Try ElevenLabs first
     if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID:
         try:
             client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
@@ -138,14 +152,12 @@ if submitted:
             st.error(f"gTTS TTS failed: {e}")
 
     # --------------------------
-    # Show booking info nicely
+    # Booking info display
     # --------------------------
-    if "booking" in result:
+    if booking:
         st.subheader("Booking Confirmation")
-        booking = result["booking"]
-        st.markdown(f"- **Booking ID:** {booking.get('booking_id')}")
-        st.markdown(f"- **Slot:** {booking.get('slot')}")
-        st.markdown(f"- **Mode:** {booking.get('mode')}")
-        st.markdown(f"- **Status:** {booking.get('status')}")
-        if booking.get("message"):
-            st.markdown(f"- **Message:** {booking.get('message')}")
+        st.write(f"Booking ID: {booking.get('booking_id', 'N/A')}")
+        st.write(f"Slot: {iso_to_readable(booking.get('slot', 'N/A'))}")
+        st.write(f"Mode: {booking.get('mode', 'N/A')}")
+        st.write(f"Status: {booking.get('status', 'N/A')}")
+        st.write(f"Message: {booking.get('message', 'N/A')}")
