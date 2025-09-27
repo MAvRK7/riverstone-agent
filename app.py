@@ -3,7 +3,15 @@ import os
 import requests
 import streamlit as st
 from dotenv import load_dotenv
-from elevenlabs.client import ElevenLabs
+
+# Optional TTS fallback
+from gtts import gTTS
+from io import BytesIO
+
+try:
+    from elevenlabs.client import ElevenLabs
+except ImportError:
+    ElevenLabs = None
 
 # --------------------------
 # Load environment variables
@@ -12,7 +20,7 @@ load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL", "https://riverstone-agent.onrender.com/call")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
-BACKEND_API_KEY = os.getenv("BACKEND_API_KEY")  # Backend API key
+BACKEND_API_KEY = os.getenv("BACKEND_API_KEY")  # optional
 
 st.set_page_config(page_title="Riverstone Voice Agent", layout="centered")
 st.title("Riverstone Voice Agent")
@@ -72,7 +80,7 @@ if submitted:
         "owner_occ": owner_occ,
         "finance_status": finance_status,
         "preferred_suburbs": [s.strip() for s in preferred_suburbs.split(",")],
-        "preferred_slot": preferred_slot  # Send empty string instead of None
+        "preferred_slot": preferred_slot  # send empty string if not provided
     }
 
     with st.spinner("Contacting Riverstone Agent..."):
@@ -80,19 +88,10 @@ if submitted:
             headers = {"Content-Type": "application/json"}
             if BACKEND_API_KEY:
                 headers["Authorization"] = f"Bearer {BACKEND_API_KEY}"
-            st.write(f"Request URL: {BACKEND_URL}")
-            st.write(f"Request Headers: {headers}")
-            st.write(f"Request Payload: {data}")
             resp = requests.post(BACKEND_URL, json=data, headers=headers, timeout=30)
-            st.write(f"Response Status: {resp.status_code}")
-            st.write(f"Response Text: {resp.text}")
             resp.raise_for_status()
             result = resp.json()
             agent_text = result.get("response", "No response from agent.")
-        except requests.exceptions.HTTPError as e:
-            st.error(f"HTTP Error: {e}")
-            st.error(f"Response Text: {resp.text}")
-            st.stop()
         except Exception as e:
             st.error(f"Error contacting backend: {e}")
             st.stop()
@@ -101,10 +100,11 @@ if submitted:
     st.write(agent_text)
 
     # --------------------------
-    # Text-to-Speech (ElevenLabs)
+    # Text-to-Speech (ElevenLabs or gTTS fallback)
     # --------------------------
-    try:
-        if ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID:
+    tts_played = False
+    if ElevenLabs and ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID:
+        try:
             client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
             audio_generator = client.text_to_speech.convert(
                 text=agent_text,
@@ -113,10 +113,19 @@ if submitted:
             )
             audio_bytes = b"".join(audio_generator)
             st.audio(audio_bytes, format="audio/mp3")
-        else:
-            st.warning("ElevenLabs API key or Voice ID missing. Skipping TTS.")
-    except Exception as e:
-        st.error(f"TTS generation failed: {e}")
+            tts_played = True
+        except Exception as e:
+            st.warning(f"ElevenLabs TTS failed: {e}. Using gTTS fallback.")
+
+    if not tts_played:
+        try:
+            tts = gTTS(agent_text, lang="en")
+            audio_buffer = BytesIO()
+            tts.write_to_fp(audio_buffer)
+            audio_buffer.seek(0)
+            st.audio(audio_buffer, format="audio/mp3")
+        except Exception as e:
+            st.error(f"gTTS TTS failed: {e}")
 
     # Optional: show booking info
     if "booking" in result:
