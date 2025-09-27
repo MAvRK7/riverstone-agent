@@ -65,3 +65,7 @@ It uses:
    ```bash
    python -m streamlit run "app.py"
 
+
+This app is available on the streamlit cloud: https://riverstone-agent-4fz39dbpniix49n5afnfkf.streamlit.app/
+   
+
