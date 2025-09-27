@@ -3,3 +3,5 @@ requests
 python-dotenv
 elevenlabs
 Pillow>=10.0.0
+gTTS>=2.3.2
+
