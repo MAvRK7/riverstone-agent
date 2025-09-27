@@ -32,16 +32,18 @@ It uses:
    Note requiremnets for the backend are:
 
    ```bash
-   fastapi==0.115.2  streamlit.30.6
-   python-dotenv==1.0.1
+   videosdk==0.0.92
    google-generativeai==0.8.3
+   python-dotenv==1.0.1
    PyJWT==2.9.0
-   requests==2.31.0
+   requests==2.32.3
    aiohttp==3.9.5
    websockets==12.0
    deepgram-sdk==3.2.5
    elevenlabs==1.6.0
-   streamlit==1.27.0
+   onnxruntime==1.19.2
+   fastapi==0.115.2
+   uvicorn==0.30.6
 
 4. Create a .env file with the following content:
 
