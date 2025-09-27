@@ -4,6 +4,13 @@ import requests
 import streamlit as st
 from dotenv import load_dotenv
 from io import BytesIO
+import logging
+
+# Configure logging to output to Streamlit logs
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
+
+# For fallback TTS
 from gtts import gTTS
 
 # ElevenLabs
@@ -98,11 +105,12 @@ if submitted:
             result = resp.json()
             agent_text = result.get("response", "No response from agent.")
         except requests.exceptions.HTTPError as e:
-            st.error(f"HTTP Error: {e}")
-            st.error(f"Response Text: {resp.text}")
+            st.error("Sorry, we couldn’t connect to the agent. Please try again later.")
+            logger.error(f"HTTP Error: {e}, Response Text: {resp.text}")
             st.stop()
         except Exception as e:
-            st.error(f"Error contacting backend: {e}")
+            st.error("An unexpected error occurred. Please try again later.")
+            logger.error(f"Error contacting backend: {e}")
             st.stop()
 
     st.subheader("Agent Response")
@@ -129,7 +137,8 @@ if submitted:
             st.audio(audio_buffer.read(), format="audio/mp3")
             tts_played = True
         except Exception as e:
-            st.warning(f"ElevenLabs TTS failed: {e}")
+            st.warning("Sorry, the premium audio feature is unavailable. Using basic audio instead.")
+            logger.warning(f"ElevenLabs TTS failed: {e}")
 
     # Fallback to gTTS
     if not tts_played:
@@ -140,7 +149,8 @@ if submitted:
             audio_buffer.seek(0)
             st.audio(audio_buffer.read(), format="audio/mp3")
         except Exception as e:
-            st.error(f"gTTS TTS failed: {e}")
+            st.error("Sorry, we couldn’t play the audio. Please try again later.")
+            logger.error(f"gTTS TTS failed: {str(e)}")
 
     # --------------------------
     # Display booking info
