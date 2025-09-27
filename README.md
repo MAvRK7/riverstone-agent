@@ -2,7 +2,12 @@
 
 ## Overview
 
-This project implements a voice-enabled AI agent for Riverstone Place, leveraging VideoSDK for real-time communication and Google Gemini for conversational AI.
+This project implements a voice-enabled AI agent for Riverstone Place.
+It uses:
+- FastAPI for the backend API (voice_agent.py)
+- Streamlit for the frontend (app.py)
+- Google Gemini for conversational AI
+- ElevenLabs for text-to-speech (voice responses)
 
 ## Setup
 
@@ -28,12 +33,18 @@ This project implements a voice-enabled AI agent for Riverstone Place, leveragin
    Create a .env file with the following content:
 
    ```bash
-   VIDEOSDK_API_KEY=your_videosdk_api_key
-   VIDEOSDK_API_KEY_SECRET=your_videosdk_api_key_secret
    GEMINI_API_KEY=your_gemini_api_key
    DEEPGRAM_API_KEY=your_deepgram_api_key
    ELEVENLABS_API_KEY=your_elevenlabs_api_key
+   ELEVENLABS_VOICE_ID=your_voice_id
+   BACKEND_URL=https://your-deployed-backend-url/call
+   BACKEND_API_KEY=optional_backend_api_key
 
 5. Run the application:
    ```bash
    python voice_agent.py
+
+6 Run the Streamlit frontend:
+   ```bash
+   streamlit run app.py
+
