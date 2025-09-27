@@ -2,11 +2,15 @@ import os
 import asyncio
 import json
 import string
+import sqlite3
+import time
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
 import google.generativeai as genai
+from fastapi.responses import JSONResponse
 
 load_dotenv()
 
@@ -50,7 +54,6 @@ KNOWLEDGE_PACK = {
 
 # Appointment slots with ISO datetime
 APPOINTMENT_SLOTS = [
-    # Example ISO format for AEST (UTC+10)
     "2025-09-26T10:00:00+10:00", "2025-09-26T13:00:00+10:00", "2025-09-26T16:00:00+10:00",
     "2025-09-27T10:00:00+10:00", "2025-09-27T13:00:00+10:00", "2025-09-27T16:00:00+10:00",
     "2025-09-28T10:00:00+10:00", "2025-09-28T13:00:00+10:00", "2025-09-28T16:00:00+10:00",
@@ -63,6 +66,67 @@ APPOINTMENT_SLOTS = [
 # FastAPI Setup
 # ---------------------------
 app = FastAPI(title="Riverstone Voice Agent")
+
+# ---------------------------
+# Custom Rate Limiter
+# ---------------------------
+request_log = defaultdict(list)
+MAX_REQUESTS = 5       # allowed requests
+WINDOW_SECONDS = 60    # in seconds
+
+def check_rate_limit(client_id: str) -> bool:
+    """Return True if within limit, False if exceeded."""
+    now = time.time()
+    window_start = now - WINDOW_SECONDS
+
+    # prune old requests
+    request_log[client_id] = [
+        ts for ts in request_log[client_id] if ts > window_start
+    ]
+
+    if len(request_log[client_id]) >= MAX_REQUESTS:
+        return False  # over limit
+
+    request_log[client_id].append(now)
+    return True
+
+# ---------------------------
+# SQLite Logging
+# ---------------------------
+conn = sqlite3.connect("leads.db", check_same_thread=False)
+cursor = conn.cursor()
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS leads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT,
+    caller_cli TEXT,
+    summary TEXT,
+    qualification TEXT,
+    booking TEXT,
+    compliance_flags TEXT,
+    transcript_url TEXT,
+    recording_url TEXT
+)
+""")
+conn.commit()
+
+async def log_lead(data):
+    timestamp = datetime.now(timezone(timedelta(hours=10))).isoformat()
+    cursor.execute("""
+        INSERT INTO leads (timestamp, caller_cli, summary, qualification, booking, compliance_flags, transcript_url, recording_url)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        timestamp,
+        data["caller_cli"],
+        data["summary"],
+        json.dumps(data["qualification"]),
+        json.dumps(data["booking"]),
+        json.dumps(data["compliance_flags"]),
+        data["transcript_url"],
+        data["recording_url"]
+    ))
+    conn.commit()
+    return {"ok": True, "logged": True}
 
 # ---------------------------
 # Models
@@ -85,7 +149,6 @@ class CallRequest(BaseModel):
 # Helpers
 # ---------------------------
 def sanitize_message(msg: str) -> str:
-    # Lowercase, remove punctuation, strip extra spaces
     translator = str.maketrans("", "", string.punctuation)
     return msg.lower().translate(translator).strip()
 
@@ -93,9 +156,6 @@ def iso_to_readable(iso_str: str) -> str:
     dt = datetime.fromisoformat(iso_str)
     return dt.strftime("%a %d %b %H:%M AEST")
 
-# ---------------------------
-# Booking + Logging
-# ---------------------------
 async def book_appointment(name, phone, email, slot_iso, mode="video", notes=""):
     booking_id = f"RS-{datetime.now(timezone(timedelta(hours=10))).strftime('%Y%m%d-%H%M%S')}"
     return {
@@ -104,22 +164,10 @@ async def book_appointment(name, phone, email, slot_iso, mode="video", notes="")
         "message": f"Booked {iso_to_readable(slot_iso)} ({mode})"
     }
 
-async def log_lead(data):
-    timestamp = datetime.now(timezone(timedelta(hours=10))).isoformat()
-    log_entry = {"timestamp": timestamp, **data}
-    print("=== LEAD LOG ===")
-    print(json.dumps(log_entry, indent=2))
-    print("================")
-    return {"ok": True, "logged": True}
-
 # ---------------------------
 # LLM Response
 # ---------------------------
 async def generate_agent_response(messages):
-    """
-    Generate a response grounded strictly in the Riverstone Place knowledge pack.
-    Handles FAQs, objections, appointment guidance, and compliance.
-    """
     user_msg = ""
     for m in messages:
         if m.get("role") == "user":
@@ -158,7 +206,14 @@ async def generate_agent_response(messages):
 # Core Endpoint
 # ---------------------------
 @app.post("/call")
-async def handle_call(call: CallRequest):
+async def handle_call(call: CallRequest, request: Request):
+    client_ip = request.client.host
+    if not check_rate_limit(client_ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests, please try again later."
+        )
+
     msg_clean = sanitize_message(call.message)
     if any(word in msg_clean for word in ["stop", "unsubscribe"]):
         return {"response": "No worries, you will not be contacted again.", "compliance_flags": ["unsubscribe_request"]}
@@ -173,7 +228,7 @@ async def handle_call(call: CallRequest):
 
     # Appointment
     slot_iso = call.preferred_slot or APPOINTMENT_SLOTS[0]
-    mode = "display-suite" if "T10" in slot_iso or "T12" in slot_iso else "video"  # Sat vs weekday
+    mode = "display-suite" if "T10" in slot_iso or "T12" in slot_iso else "video"
 
     booking = await book_appointment(
         call.name, call.phone, call.email, slot_iso,
@@ -224,7 +279,7 @@ def healthcheck():
     return {"status": "ok", "message": "Riverstone Agent is running ✅"}
 
 # ---------------------------
-# Run via Uvicorn for Render
+# Run via Uvicorn
 # ---------------------------
 if __name__ == "__main__":
     import uvicorn
