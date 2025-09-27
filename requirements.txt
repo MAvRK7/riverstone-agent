@@ -8,8 +8,4 @@ aiohttp==3.9.5
 websockets==12.0
 deepgram-sdk==3.2.5
 elevenlabs==1.6.0
-
-
-
-
-
+streamlit==1.27.0
