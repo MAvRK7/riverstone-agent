@@ -28,9 +28,7 @@ It uses:
    ```bash
    pip install -r requirements.txt
 
-4. pip install -r requirements.txt
-
-   Create a .env file with the following content:
+4. Create a .env file with the following content:
 
    ```bash
    GEMINI_API_KEY=your_gemini_api_key
@@ -41,10 +39,12 @@ It uses:
    BACKEND_API_KEY=optional_backend_api_key
 
 5. Run the application:
+   
    ```bash
    python voice_agent.py
 
-6 Run the Streamlit frontend:
+6. Run the Streamlit frontend:
+
    ```bash
    streamlit run app.py
 
