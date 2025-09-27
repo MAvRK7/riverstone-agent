@@ -10,7 +10,7 @@ import logging
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
-# For fallback TTS
+# For TTS services
 from gtts import gTTS
 
 # ElevenLabs
@@ -137,7 +137,7 @@ if submitted:
             st.audio(audio_buffer.read(), format="audio/mp3")
             tts_played = True
         except Exception as e:
-            st.warning("Sorry, the premium audio feature is unavailable. Using basic audio instead.")
+            st.warning("Sorry, the premium audio feature is unavailable. Trying basic audio...")
             logger.warning(f"ElevenLabs TTS failed: {e}")
 
     # Fallback to gTTS
@@ -147,19 +147,20 @@ if submitted:
             max_length = 200
             if len(agent_text) > max_length:
                 agent_text = agent_text[:max_length] + "..."
-            # Use tempfile to save and read audio
+            # Use tempfile to save and play audio
             with tempfile.NamedTemporaryFile(delete=True, suffix=".mp3") as fp:
-                tts = gTTS(text=agent_text, lang="en")
+                tts = gTTS(text=agent_text, lang="en", slow=False)
                 tts.save(fp.name)
                 fp.seek(0)
                 st.audio(fp.read(), format="audio/mp3")
+            tts_played = True
         except Exception as e:
             st.error("Sorry, we couldn’t play the audio. Please try again later.")
             logger.error(f"gTTS TTS failed: {str(e)}")
 
     # --------------------------
     # Display booking info
-    # --------------------------
+# --------------------------
     if "booking" in result:
         booking = result["booking"]
         st.subheader("Booking Confirmation")
