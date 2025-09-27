@@ -17,12 +17,12 @@ It uses the following stack:
 👉 https://riverstone-agent-4fz39dbpniix49n5afnfkf.streamlit.app/
 
 Features
-✔️ Buyer qualification – Based on budget, bedrooms, parking, finance status, timeframe.
-✔️ FAQ & objection handling – e.g. strata fees, completion timeline, finance, FIRB, rental guarantees.
-✔️ Appointment booking – 15-minute call or display suite visit using mock API with available slots.
-✔️ Compliance – Handles “stop/unsubscribe” requests.
-✔️ Lead logging – Stores call data, booking info, and compliance flags in SQLite.
-✔️ Voice output – ElevenLabs locally, gTTS fallback (limited on free hosting).
+- ✔️ Buyer qualification – Based on budget, bedrooms, parking, finance status, timeframe.
+- ✔️ FAQ & objection handling – e.g. strata fees, completion timeline, finance, FIRB, rental guarantees.
+- ✔️ Appointment booking – 15-minute call or display suite visit using mock API with available slots.
+- ✔️ Compliance – Handles “stop/unsubscribe” requests.
+- ✔️ Lead logging – Stores call data, booking info, and compliance flags in SQLite.
+- ✔️ Voice output – ElevenLabs locally, gTTS fallback (limited on free hosting).
 
 
 ## Setup
