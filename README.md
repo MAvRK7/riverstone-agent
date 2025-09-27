@@ -66,6 +66,8 @@ Features
    ```bash
    python -m streamlit run "app.py"
 
+<img width="1205" height="398" alt="image" src="https://github.com/user-attachments/assets/5f916d25-4fa7-445d-81f1-d54b5cecc213" />
+
 
 ## Limitations (Free Demo)
 
