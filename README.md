@@ -84,7 +84,11 @@ If extended, improvements could include:
 - Phone-call support via Twilio or Retell.
 - Richer UI/UX with conversation history.
 - Integration with Calendly or Google Calendar for real bookings.
-  
+
+<img width="1440" height="740" alt="image" src="https://github.com/user-attachments/assets/9a543db9-29a6-4048-94aa-bdeabe6b7961" />
+Model Output
+<img width="1440" height="705" alt="image" src="https://github.com/user-attachments/assets/66b249c7-d47f-4a19-a25e-f6e99fb04d85" />
+
 -------------------------------------------------------------------------------------
 ✅ This demo was built entirely free of cost to show end-to-end flow, despite limitations.
 -------------------------------------------------------------------------------------   
