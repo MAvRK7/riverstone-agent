@@ -30,7 +30,12 @@ except ImportError:
 # Load environment variables
 # --------------------------
 load_dotenv()
-BACKEND_URL = os.getenv("BACKEND_URL", "https://riverstone-agent-1.onrender.com/call")
+# Use Streamlit secrets (preferred for deployed version) with fallback
+if "api" in st.secrets:
+    BACKEND_URL = st.secrets["api"]["BASE_URL"].rstrip("/") + "/call"
+else:
+    # Fallback for local .env
+    BACKEND_URL = os.getenv("BACKEND_URL", "https://riverstone-agent.onrender.com/call")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 BACKEND_API_KEY = os.getenv("BACKEND_API_KEY")  # Optional backend auth
