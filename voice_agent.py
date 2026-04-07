@@ -26,7 +26,8 @@ if not GEMINI_API_KEY or not DEEPGRAM_API_KEY or not ELEVENLABS_API_KEY:
 
 genai.configure(api_key=GEMINI_API_KEY)
 
-# Knowledge pack from PDF
+# Knowledge pack 
+'''
 KNOWLEDGE_PACK = {
     "project": "Riverstone Place",
     "suburb": "Abbotsford, VIC",
@@ -51,6 +52,54 @@ KNOWLEDGE_PACK = {
     },
     "handoff_email": "sales@riverstoneplace.example"
 }
+'''
+KNOWLEDGE_PACK = {
+    "developer": "Harbourline Developments",
+    "projects": [
+        {
+            "name": "Riverstone Place",
+            "suburb": "Abbotsford",
+            "price_1bed": "from $585,000",
+            "price_2bed": "from $845,000 (1 car included)",
+            "price_3bed": "from $1.28m (2 cars included)",
+            "strata": "2.8–6.2k/yr",
+            "completion": "Q4 2027",
+            "lifestyle": "Quiet, leafy, 10 min to CBD, near Yarra River trails"
+        },
+        {
+            "name": "Harbourview Towers",
+            "suburb": "Richmond",
+            "price_1bed": "from $720,000",
+            "price_2bed": "from $1.05m",
+            "price_3bed": "from $1.65m",
+            "strata": "3.8–7.5k/yr",
+            "completion": "Q2 2027",
+            "lifestyle": "Vibrant, cafes, shops, 5 min walk to train & MCG"
+        },
+        {
+            "name": "Yarra Edge",
+            "suburb": "Footscray",
+            "price_1bed": "from $520,000",
+            "price_2bed": "from $780,000",
+            "price_3bed": "from $1.15m",
+            "strata": "2.5–5.1k/yr",
+            "completion": "Q3 2026",
+            "lifestyle": "Up-and-coming, multicultural food scene, best value, near Footscray Station"
+        },
+        {
+            "name": "Collingwood Quarter",
+            "suburb": "Collingwood",
+            "price_1bed": "from $635,000",
+            "price_2bed": "from $920,000",
+            "price_3bed": "from $1.45m",
+            "strata": "3.2–6.8k/yr",
+            "completion": "Q1 2027",
+            "lifestyle": "Hip street art, breweries, trams everywhere, young professional vibe"
+        }
+    ],
+    "handoff_email": "sales@harbourline.com.au",
+    "display_suite": "123 Swan St, Richmond"
+}
 
 # Appointment slots with ISO datetime
 APPOINTMENT_SLOTS = [
@@ -61,6 +110,7 @@ APPOINTMENT_SLOTS = [
     "2025-09-30T10:00:00+10:00", "2025-09-30T13:00:00+10:00", "2025-09-30T16:00:00+10:00",
     "2025-10-04T10:00:00+10:00", "2025-10-04T12:00:00+10:00"
 ]
+
 
 # ---------------------------
 # FastAPI Setup
@@ -137,6 +187,7 @@ class CallRequest(BaseModel):
     finance_status: str
     preferred_suburbs: list
     preferred_slot: str = None
+    additional_info: str = ""
 
 # ---------------------------
 # Helpers
@@ -164,37 +215,42 @@ async def book_appointment(name, phone, email, slot_iso, mode="video", notes="")
 # ---------------------------
 # LLM Response
 # ---------------------------
-async def generate_agent_response(messages):
-    user_msg = ""
-    for m in messages:
-        if m.get("role") == "user":
-            user_msg = sanitize_message(m.get("content", ""))
-            break
+async def generate_agent_response(call: CallRequest):
+    msg = call.message.lower()
 
-    if any(word in user_msg for word in ["stop", "unsubscribe"]):
-        return "No worries, you will not be contacted again."
+    # Quick unsubscribe
+    if any(word in msg for word in ["stop", "unsubscribe", "do not call"]):
+        return "No worries at all — you won’t be contacted again. Have a great day!"
 
-    if "strata" in user_msg:
-        return f"The indicative strata for apartments ranges from {KNOWLEDGE_PACK['strata']['1-bed']} to {KNOWLEDGE_PACK['strata']['3-bed']} per year. We cannot guarantee exact costs."
-    if "completion" in user_msg or "finish" in user_msg:
-        return f"Construction is targeted to start in late 2025 and complete by {KNOWLEDGE_PACK['completion_target']} (indicative)."
-    if "finance" in user_msg or "loan" in user_msg:
-        return f"I’m not able to provide personal finance advice, but we can refer you to a qualified broker via {KNOWLEDGE_PACK['handoff_email']}."
-    if "foreign" in user_msg or "firb" in user_msg or "stamp duty" in user_msg:
-        return f"Foreign buyers may face extra approvals/taxes; I’m not able to advise, but we can refer you to a specialist via {KNOWLEDGE_PACK['handoff_email']}."
-    if "rental guarantee" in user_msg or "yield" in user_msg:
-        return "We do not provide rental guarantees. We can refer you to a property manager for market guidance."
+    # Build smart prompt
+    prompt = f"""
+You are an experienced, friendly Melbourne real estate sales agent for Harbourline Developments.
+Speak like a real person — warm, confident, short sentences, never robotic.
+Maximum 3-4 sentences. End with ONE question or clear next step to keep the conversation going.
 
-    assistant_msg = ""
-    for m in messages:
-        if m.get("role") == "assistant":
-            assistant_msg = m.get("content", "")
-            break
+Our current projects:
+- Riverstone Place (Abbotsford): {KNOWLEDGE_PACK['projects'][0]['price_2bed']}, leafy & quiet
+- Harbourview Towers (Richmond): {KNOWLEDGE_PACK['projects'][1]['price_2bed']}, vibrant & central
+- Yarra Edge (Footscray): {KNOWLEDGE_PACK['projects'][2]['price_2bed']}, best value & food scene
+- Collingwood Quarter (Collingwood): {KNOWLEDGE_PACK['projects'][3]['price_2bed']}, hip & creative
 
-    if not assistant_msg.strip():
-        return "I’m not sure about that—would you like a human specialist to follow up?"
+User details:
+• Name: {call.name}
+• Budget: ${call.budget:,}
+• Beds wanted: {call.beds}
+• Timeframe: {call.timeframe}
+• Finance: {call.finance_status}
+• Owner-occupier: {call.owner_occ}
+• Extra note: {call.message}
 
-    return assistant_msg
+Based on what they told you, recommend the BEST matching suburb/project and why it fits them.
+If their budget is low → lean Footscray. Medium → Abbotsford/Collingwood. High → Richmond.
+Be helpful and slightly salesy. Never push finance/legal advice — refer to {KNOWLEDGE_PACK['handoff_email']}.
+"""
+
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    response = model.generate_content(prompt)
+    return response.text.strip()
 
 # ---------------------------
 # Core Endpoint
@@ -208,42 +264,42 @@ async def handle_call(call: CallRequest, request: Request):
             detail="Too many requests, please try again later."
         )
 
-    msg_clean = sanitize_message(call.message)
-    if any(word in msg_clean for word in ["stop", "unsubscribe"]):
-        return {"response": "No worries, you will not be contacted again.", "compliance_flags": ["unsubscribe_request"]}
+    msg_clean = sanitize_message(call.message + " " + getattr(call, "additional_info", ""))
+    if any(word in msg_clean for word in ["stop", "unsubscribe", "do not call"]):
+        return {"response": "No worries at all — you won’t be contacted again. Have a great day!", 
+                "compliance_flags": ["unsubscribe_request"]}
+    
+    # Smart interest scoring for booking / human handoff
+    interest_score = 0
+    if call.budget >= 800000: interest_score += 2
+    if call.beds >= 2: interest_score += 1
+    if call.timeframe in ["0-3 months", "3-6 months"]: interest_score += 2
+    if any(word in msg_clean for word in ["visit", "see", "appointment", "book", "chat", "meet", "speak", "human"]):
+        interest_score += 3
 
-    # Qualification & recommendation
-    if call.budget < 650000:
-        recommendation = "1-bed, parking optional"
-    elif 650000 <= call.budget <= 1100000:
-        recommendation = "1- or 2-bed, confirm beds/parking/timeline"
-    else:
-        recommendation = "Include 3-bed, confirm two car spaces"
+    booking = {"ok": False}
+    human_handoff = False
 
-    # Appointment
-    slot_iso = call.preferred_slot or APPOINTMENT_SLOTS[0]
-    mode = "display-suite" if "T10" in slot_iso or "T12" in slot_iso else "video"
+    if interest_score >= 5:  # Hot lead → book appointment
+        slot_iso = call.preferred_slot or APPOINTMENT_SLOTS[0]
+        mode = "display-suite" if "T10" in slot_iso or "T12" in slot_iso else "video"
+        booking = await book_appointment(
+            call.name, call.phone, call.email, slot_iso,
+            mode=mode,
+            notes=f"{call.beds}-bed, ${call.budget}, {call.finance_status}"
+        )
+    elif interest_score >= 3 and any(word in msg_clean for word in ["human", "speak to someone", "sales team"]):
+        human_handoff = True
 
-    booking = await book_appointment(
-        call.name, call.phone, call.email, slot_iso,
-        mode=mode,
-        notes=f"{call.beds}-bed, budget {call.budget}, finance {call.finance_status}"
-    )
-
-    # Generate LLM response
-    messages = [
-        {"role": "system", "content": "You are a Riverstone Place sales agent. Use ONLY the knowledge pack to answer."},
-        {"role": "user", "content": call.message},
-        {"role": "assistant", "content": f"Based on your budget, I recommend: {recommendation}. Appointment: {booking['message']}"}
-    ]
-    agent_reply = await generate_agent_response(messages)
+    # Generate natural response using Gemini
+    agent_reply = await generate_agent_response(call)
 
     # Log lead
     lead_data = {
         "caller_cli": call.phone,
-        "summary": f"{call.name}, {call.beds}-bed, budget {call.budget}, finance {call.finance_status}",
+        "summary": f"{call.name}, {call.beds}-bed, budget ${call.budget}, finance {call.finance_status}",
         "qualification": {
-            "budget_band": f"{call.budget}",
+            "budget_band": str(call.budget),
             "beds": call.beds,
             "parking": call.parking,
             "owner_occ": call.owner_occ,
@@ -258,7 +314,13 @@ async def handle_call(call: CallRequest, request: Request):
     }
     await log_lead(lead_data)
 
-    return {"response": agent_reply, "booking": booking, "lead_logged": True}
+    return {
+        "response": agent_reply,
+        "booking": booking if booking["ok"] else None,
+        "human_handoff": human_handoff,
+        "lead_logged": True
+    }
+
 
 # ---------------------------
 # Healthcheck
