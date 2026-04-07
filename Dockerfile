@@ -16,8 +16,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose ports
-EXPOSE 8501  # Streamlit
-EXPOSE 8000  # FastAPI
+# Streamlit
+EXPOSE 8501  
+# FastAPI
+EXPOSE 8000  
 
 # Default command: we'll override this per service on Render
 CMD ["uvicorn", "voice_agent:app", "--host", "0.0.0.0", "--port", "8000"]
