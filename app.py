@@ -3,6 +3,7 @@ import os
 import requests
 import streamlit as st
 from dotenv import load_dotenv
+from io import BytesIO
 import tempfile
 import logging
 
@@ -133,7 +134,8 @@ if submitted:
             audio_generator = client.text_to_speech.convert(
                 text=agent_text,
                 voice_id=ELEVENLABS_VOICE_ID,
-                model_id="eleven_multilingual_v2"
+                model_id="eleven_multilingual_v2",
+                output_format="mp3_44100_128",
             )
             audio_buffer = BytesIO()
             for chunk in audio_generator:
@@ -142,7 +144,7 @@ if submitted:
             audio_buffer.seek(0)
             audio_data = audio_buffer.read()
             if len(audio_data) > 0:
-                st.audio(audio_data, format="audio/mp3")
+                st.audio(audio_data, format="audio/mp3", autoplay=True)
                 tts_played = True
             else:
                 raise ValueError("No audio data generated")
@@ -153,44 +155,17 @@ if submitted:
     # Fallback to gTTS
     if not tts_played:
         try:
-            # Truncate text if too long
-            max_length = 200
-            if len(agent_text) > max_length:
-                agent_text = agent_text[:max_length] + "..."
-            with tempfile.NamedTemporaryFile(delete=True, suffix=".mp3") as fp:
-                tts = gTTS(text=agent_text, lang="en", slow=False)
+            tts = gTTS(text=agent_text[:500], lang="en", slow=False)  # 500 char limit is safe
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
                 tts.save(fp.name)
-                fp.seek(0)
-                audio_data = fp.read()
-                if len(audio_data) > 0:
-                    st.audio(audio_data, format="audio/mp3")
-                    tts_played = True
-                else:
-                    raise ValueError("No audio data generated")
+                st.audio(fp.name, format="audio/mp3", autoplay=True)
+                tts_played = True
         except Exception as e:
-            st.warning("Sorry, basic audio is unavailable. Trying offline audio...")
-            logger.warning(f"gTTS TTS failed: {e}")
+            logger.warning(f"gTTS failed: {e}")
 
     # Offline fallback to pyttsx3
-    if not tts_played and PYTTSX3_AVAILABLE:
-        try:
-            # Truncate text if too long
-            max_length = 200
-            if len(agent_text) > max_length:
-                agent_text = agent_text[:max_length] + "..."
-            with tempfile.NamedTemporaryFile(delete=True, suffix=".mp3") as fp:
-                engine = pyttsx3.init()
-                engine.save_to_file(agent_text, fp.name)
-                engine.runAndWait()
-                fp.seek(0)
-                audio_data = fp.read()
-                if len(audio_data) > 0:
-                    st.audio(audio_data, format="audio/mp3")
-                else:
-                    raise ValueError("No audio data generated")
-        except Exception as e:
-            st.error("Sorry, we couldn’t play the audio. Please try again later.")
-            logger.error(f"pyttsx3 TTS failed: {e}")
+    if not tts_played:
+        st.warning("🔊 Audio unavailable right now — you can still read the response above.")
 
     # --------------------------
     # Display booking info
