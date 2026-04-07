@@ -51,7 +51,7 @@ st.markdown("""
 
 # Main Hero Image
 st.image(
-    "hero_image.jpg", 
+    "hero_img.jpg", 
     use_container_width=True,
     caption="Discover modern living across Melbourne's best inner suburbs"
 )
