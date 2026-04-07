@@ -234,24 +234,19 @@ if submitted:
 
     st.divider()
     st.caption("💡 Tip: Tell us your lifestyle (quiet, vibrant, budget-focused, near parks, etc.) and we’ll suggest the best suburb for you.")
-    '''
-    # --------------------------
-    # Text-to-Speech
-    # --------------------------
-    st.divider()
-    '''
     
-    # ====================== AGENT RESPONSE + INTERACTIONS ======================
+# ====================== SHOW AGENT RESPONSE (persists after buttons) ======================
+if "agent_text" in st.session_state:
     st.subheader("Agent Response")
-    st.write(agent_text)
+    st.write(st.session_state.agent_text)
 
     # Voice Button
     if st.button("🔊 Play Agent Response (Voice)"):
-        play_agent_audio(agent_text)   # ← We will define this function below
+        play_agent_audio(st.session_state.agent_text)
 
     st.divider()
 
-    # Action Buttons - What next?
+    # Action Buttons
     st.markdown("**What would you like to do next?**")
     col1, col2, col3, col4 = st.columns(4)
 
@@ -278,9 +273,8 @@ if submitted:
     if st.session_state.get("follow_up_mode", False):
         follow_up = st.text_input("Your follow-up question:")
         if st.button("Send Follow-up"):
-            if follow_up.strip():
-                # Reuse the previous form data but update the message
-                follow_up_data = data.copy()
+            if follow_up.strip() and "last_data" in st.session_state:
+                follow_up_data = st.session_state.last_data.copy()
                 follow_up_data["message"] = follow_up.strip()
 
                 with st.spinner("Asking agent..."):
@@ -288,25 +282,22 @@ if submitted:
                         headers = {"Content-Type": "application/json"}
                         if BACKEND_API_KEY:
                             headers["Authorization"] = f"Bearer {BACKEND_API_KEY}"
-
                         resp = requests.post(BACKEND_URL, json=follow_up_data, headers=headers, timeout=30)
                         resp.raise_for_status()
                         new_result = resp.json()
                         new_agent_text = new_result.get("response", "No response.")
 
+                        # Show follow-up response
                         st.subheader("Agent Follow-up Response")
                         st.write(new_agent_text)
 
-                        # Play audio for follow-up too
                         if st.button("🔊 Play Follow-up Response"):
                             play_agent_audio(new_agent_text)
 
                     except Exception as e:
                         st.error("Sorry, could not get follow-up response.")
                         logger.error(f"Follow-up error: {e}")
+
             st.session_state.follow_up_mode = False
             st.rerun()
-    # ====================== END OF AGENT RESPONSE SECTION ======================
-
-
 
