@@ -186,6 +186,9 @@ with st.form("user_input_form"):
 # --------------------------
 # Send request to backend
 # --------------------------
+# --------------------------
+# Send request to backend
+# --------------------------
 if submitted:
     data = {
         "name": name,
@@ -209,22 +212,26 @@ if submitted:
             if BACKEND_API_KEY:
                 headers["Authorization"] = f"Bearer {BACKEND_API_KEY}"
             resp = requests.post(BACKEND_URL, json=data, headers=headers, timeout=30)
-            # st.info(f"Debug: Requested {BACKEND_URL} → Status: {resp.status_code}")  # DEBUG !!
             resp.raise_for_status()
             result = resp.json()
-            if result.get("booking") and result["booking"].get("ok"):
-                booking = result["booking"]
+
+            # Store in session state for persistence
+            st.session_state.agent_text = result.get("response", "No response from agent.")
+            st.session_state.booking = result.get("booking") if result.get("booking") and result["booking"].get("ok") else None
+            st.session_state.last_data = data  # for follow-ups
+            st.session_state.follow_up_mode = False  # reset
+
+            # Show booking message immediately
+            if st.session_state.booking:
                 st.success("✅ Based on your requirements, we've scheduled an appointment with our sales team.")
                 st.subheader("🎉 Booking Confirmed")
-                st.markdown(f"**Booking ID:** {booking.get('booking_id')}")
-                st.markdown(f"**Slot:** {booking.get('slot')}")
-                st.success(booking.get('message'))
-            elif result.get("human_handoff"):
-                st.success("✅ Great choice! Our sales team will call you within 24 hours to arrange a personal chat.")
-            agent_text = result.get("response", "No response from agent.")
+                st.markdown(f"**Booking ID:** {st.session_state.booking.get('booking_id', 'N/A')}")
+                st.markdown(f"**Slot:** {st.session_state.booking.get('slot', 'N/A')}")
+                st.success(st.session_state.booking.get('message', 'Appointment booked successfully'))
+
         except requests.exceptions.HTTPError as e:
             st.error("Sorry, we couldn’t connect to the agent. Please try again later.")
-            logger.error(f"HTTP Error: {e}, Response Text: {resp.text}")
+            logger.error(f"HTTP Error: {e}")
             st.stop()
         except Exception as e:
             st.error("An unexpected error occurred. Please try again later.")
@@ -232,16 +239,18 @@ if submitted:
             st.stop()
 
 
+# --------------------------
+# Show Agent Response + Actions
+# --------------------------
+if "agent_text" in st.session_state:
     st.divider()
     st.caption("💡 Tip: Tell us your lifestyle (quiet, vibrant, budget-focused, near parks, etc.) and we’ll suggest the best suburb for you.")
-    
-# ====================== SHOW AGENT RESPONSE (persists after buttons) ======================
-if "agent_text" in st.session_state:
+
     st.subheader("Agent Response")
     st.write(st.session_state.agent_text)
 
     # Voice Button
-    if st.button("🔊 Play Agent Response (Voice)"):
+    if st.button("🔊 Play Agent Response (Voice)", key="play_agent_voice"):
         play_agent_audio(st.session_state.agent_text)
 
     st.divider()
@@ -251,53 +260,62 @@ if "agent_text" in st.session_state:
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        if st.button("👍 I'm Happy – Book Meeting", type="primary"):
+        if st.button("👍 I'm Happy – Book Meeting", key="book_meeting"):
             st.success("✅ Excellent! Our sales team will contact you shortly to arrange a viewing.")
 
     with col2:
-        if st.button("💬 Ask Follow-up Question"):
+        if st.button("💬 Ask Follow-up Question", key="ask_followup"):
             st.session_state.follow_up_mode = True
             st.rerun()
 
     with col3:
-        if st.button("🗣️ Speak to a Human Now"):
+        if st.button("🗣️ Speak to a Human Now", key="speak_human"):
             st.success("Our team will call you within 24 hours. Thank you!")
 
     with col4:
-        if st.button("🔄 Start Fresh"):
+        if st.button("🔄 Start Fresh", key="start_fresh"):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
 
-    # Follow-up Question Input
-    if st.session_state.get("follow_up_mode", False):
-        follow_up = st.text_input("Your follow-up question:")
-        if st.button("Send Follow-up"):
-            if follow_up.strip() and "last_data" in st.session_state:
-                follow_up_data = st.session_state.last_data.copy()
-                follow_up_data["message"] = follow_up.strip()
+# --------------------------
+# Follow-up Input + Response
+# --------------------------
+if st.session_state.get("follow_up_mode", False):
+    if "follow_up_text" not in st.session_state:
+        st.session_state.follow_up_text = ""
 
-                with st.spinner("Asking agent..."):
-                    try:
-                        headers = {"Content-Type": "application/json"}
-                        if BACKEND_API_KEY:
-                            headers["Authorization"] = f"Bearer {BACKEND_API_KEY}"
-                        resp = requests.post(BACKEND_URL, json=follow_up_data, headers=headers, timeout=30)
-                        resp.raise_for_status()
-                        new_result = resp.json()
-                        new_agent_text = new_result.get("response", "No response.")
+    st.text_input("Your follow-up question:", key="follow_up_text")
 
-                        # Show follow-up response
-                        st.subheader("Agent Follow-up Response")
-                        st.write(new_agent_text)
+    if st.button("Send Follow-up", key="send_followup"):
+        follow_up_text = st.session_state.follow_up_text.strip()
+        if follow_up_text and "last_data" in st.session_state:
+            follow_up_data = st.session_state.last_data.copy()
+            follow_up_data["message"] = follow_up_text
 
-                        if st.button("🔊 Play Follow-up Response"):
-                            play_agent_audio(new_agent_text)
+            with st.spinner("Asking agent..."):
+                try:
+                    headers = {"Content-Type": "application/json"}
+                    if BACKEND_API_KEY:
+                        headers["Authorization"] = f"Bearer {BACKEND_API_KEY}"
+                    resp = requests.post(BACKEND_URL, json=follow_up_data, headers=headers, timeout=30)
+                    resp.raise_for_status()
+                    new_result = resp.json()
+                    st.session_state.followup_text = new_result.get("response", "No response.")
 
-                    except Exception as e:
-                        st.error("Sorry, could not get follow-up response.")
-                        logger.error(f"Follow-up error: {e}")
+                    # Show follow-up response
+                    st.subheader("Agent Follow-up Response")
+                    st.write(st.session_state.followup_text)
 
-            st.session_state.follow_up_mode = False
-            st.rerun()
+                    # Voice for follow-up
+                    if st.button("🔊 Play Follow-up Response", key="play_followup_voice"):
+                        play_agent_audio(st.session_state.followup_text)
 
+                except Exception as e:
+                    st.error("Sorry, could not get follow-up response.")
+                    logger.error(f"Follow-up error: {e}")
+
+        # Reset follow-up mode and input
+        st.session_state.follow_up_mode = False
+        st.session_state.follow_up_text = ""
+        st.rerun()
