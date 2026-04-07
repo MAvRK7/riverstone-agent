@@ -267,7 +267,7 @@ async def handle_call(call: CallRequest, request: Request):
             status_code=429,
             detail="Too many requests, please try again later."
         )
-
+    # Smart interest scoring - only book or handoff for hot leads
     msg_clean = sanitize_message(call.message + " " + getattr(call, "additional_info", ""))
     if any(word in msg_clean for word in ["stop", "unsubscribe", "do not call"]):
         return {"response": "No worries at all — you won’t be contacted again. Have a great day!", 

@@ -4,6 +4,8 @@ import requests
 import streamlit as st
 from dotenv import load_dotenv
 from io import BytesIO
+from gtts import gTTS
+from elevenlabs.client import ElevenLabs
 import tempfile
 import logging
 
@@ -12,7 +14,6 @@ logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
 
 # For TTS services
-from gtts import gTTS
 try:
     import pyttsx3
     PYTTSX3_AVAILABLE = True
@@ -21,7 +22,6 @@ except ImportError:
 
 # ElevenLabs
 try:
-    from elevenlabs.client import ElevenLabs
     ELEVENLABS_AVAILABLE = True
 except ImportError:
     ELEVENLABS_AVAILABLE = False
@@ -40,7 +40,52 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 BACKEND_API_KEY = os.getenv("BACKEND_API_KEY")  # Optional backend auth
 
+def play_agent_audio(text: str):
+    """Helper to play audio - tries ElevenLabs then falls back to gTTS"""
+    if not text:
+        st.warning("No text to speak.")
+        return
+
+    tts_played = False
+
+    # Try ElevenLabs first (premium voice)
+    if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID:
+        try:
+            client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
+            audio_generator = client.text_to_speech.convert(
+                text=text[:800],
+                voice_id=ELEVENLABS_VOICE_ID,
+                model_id="eleven_multilingual_v2",
+                output_format="mp3_44100_128"
+            )
+            audio_buffer = BytesIO()
+            for chunk in audio_generator:
+                if chunk:
+                    audio_buffer.write(chunk)
+            audio_buffer.seek(0)
+            st.audio(audio_buffer, format="audio/mp3")
+            tts_played = True
+            return
+        except Exception as e:
+            logger.warning(f"ElevenLabs failed: {e}")
+
+    # Fallback to gTTS (most reliable on Streamlit Cloud)
+    try:
+        tts = gTTS(text=text[:500], lang="en", slow=False)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
+            tts.save(fp.name)
+            st.audio(fp.name, format="audio/mp3")
+            tts_played = True
+    except Exception as e:
+        logger.warning(f"gTTS failed: {e}")
+
+    if not tts_played:
+        st.warning("🔊 Audio currently unavailable. Please read the response above.")
+
+
 st.set_page_config(page_title="Riverstone Voice Agent", layout="centered")
+if "follow_up_mode" not in st.session_state:
+    st.session_state.follow_up_mode = False
 st.title("Riverstone Voice Agent")
 
 # --------------------------
@@ -164,11 +209,12 @@ if submitted:
             if BACKEND_API_KEY:
                 headers["Authorization"] = f"Bearer {BACKEND_API_KEY}"
             resp = requests.post(BACKEND_URL, json=data, headers=headers, timeout=30)
-            st.info(f"Debug: Requested {BACKEND_URL} → Status: {resp.status_code}")  # temporary
+            # st.info(f"Debug: Requested {BACKEND_URL} → Status: {resp.status_code}")  # DEBUG !!
             resp.raise_for_status()
             result = resp.json()
             if result.get("booking") and result["booking"].get("ok"):
                 booking = result["booking"]
+                st.success("✅ Based on your requirements, we've scheduled an appointment with our sales team.")
                 st.subheader("🎉 Booking Confirmed")
                 st.markdown(f"**Booking ID:** {booking.get('booking_id')}")
                 st.markdown(f"**Slot:** {booking.get('slot')}")
@@ -185,54 +231,82 @@ if submitted:
             logger.error(f"Error contacting backend: {e}")
             st.stop()
 
-    st.subheader("Agent Response")
-    st.write(agent_text)
 
     st.divider()
     st.caption("💡 Tip: Tell us your lifestyle (quiet, vibrant, budget-focused, near parks, etc.) and we’ll suggest the best suburb for you.")
-
+    '''
     # --------------------------
     # Text-to-Speech
     # --------------------------
-    tts_played = False
+    st.divider()
+    '''
+    
+    # ====================== AGENT RESPONSE + INTERACTIONS ======================
+    st.subheader("Agent Response")
+    st.write(agent_text)
 
-    # Try ElevenLabs first
-    if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID:
-        try:
-            client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
-            audio_generator = client.text_to_speech.convert(
-                text=agent_text,
-                voice_id=ELEVENLABS_VOICE_ID,
-                model_id="eleven_multilingual_v2",
-                output_format="mp3_44100_128",
-            )
-            audio_buffer = BytesIO()
-            for chunk in audio_generator:
-                if chunk:
-                    audio_buffer.write(chunk)
-            audio_buffer.seek(0)
-            audio_data = audio_buffer.read()
-            if len(audio_data) > 0:
-                st.audio(audio_data, format="audio/mp3", autoplay=True)
-                tts_played = True
-            else:
-                raise ValueError("No audio data generated")
-        except Exception as e:
-            st.warning("Sorry, the premium audio feature is unavailable. Trying basic audio...")
-            logger.warning(f"ElevenLabs TTS failed: {e}")
+    # Voice Button
+    if st.button("🔊 Play Agent Response (Voice)"):
+        play_agent_audio(agent_text)   # ← We will define this function below
 
-    # Fallback to gTTS
-    if not tts_played:
-        try:
-            tts = gTTS(text=agent_text[:500], lang="en", slow=False)  # 500 char limit is safe
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
-                tts.save(fp.name)
-                st.audio(fp.name, format="audio/mp3", autoplay=True)
-                tts_played = True
-        except Exception as e:
-            logger.warning(f"gTTS failed: {e}")
+    st.divider()
 
-    # Offline fallback to pyttsx3
-    if not tts_played:
-        st.warning("🔊 Audio unavailable right now — you can still read the response above.")
+    # Action Buttons - What next?
+    st.markdown("**What would you like to do next?**")
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        if st.button("👍 I'm Happy – Book Meeting", type="primary"):
+            st.success("✅ Excellent! Our sales team will contact you shortly to arrange a viewing.")
+
+    with col2:
+        if st.button("💬 Ask Follow-up Question"):
+            st.session_state.follow_up_mode = True
+            st.rerun()
+
+    with col3:
+        if st.button("🗣️ Speak to a Human Now"):
+            st.success("Our team will call you within 24 hours. Thank you!")
+
+    with col4:
+        if st.button("🔄 Start Fresh"):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
+
+    # Follow-up Question Input
+    if st.session_state.get("follow_up_mode", False):
+        follow_up = st.text_input("Your follow-up question:")
+        if st.button("Send Follow-up"):
+            if follow_up.strip():
+                # Reuse the previous form data but update the message
+                follow_up_data = data.copy()
+                follow_up_data["message"] = follow_up.strip()
+
+                with st.spinner("Asking agent..."):
+                    try:
+                        headers = {"Content-Type": "application/json"}
+                        if BACKEND_API_KEY:
+                            headers["Authorization"] = f"Bearer {BACKEND_API_KEY}"
+
+                        resp = requests.post(BACKEND_URL, json=follow_up_data, headers=headers, timeout=30)
+                        resp.raise_for_status()
+                        new_result = resp.json()
+                        new_agent_text = new_result.get("response", "No response.")
+
+                        st.subheader("Agent Follow-up Response")
+                        st.write(new_agent_text)
+
+                        # Play audio for follow-up too
+                        if st.button("🔊 Play Follow-up Response"):
+                            play_agent_audio(new_agent_text)
+
+                    except Exception as e:
+                        st.error("Sorry, could not get follow-up response.")
+                        logger.error(f"Follow-up error: {e}")
+            st.session_state.follow_up_mode = False
+            st.rerun()
+    # ====================== END OF AGENT RESPONSE SECTION ======================
+
+
 
