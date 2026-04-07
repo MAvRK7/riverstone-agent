@@ -24,7 +24,8 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 if not GEMINI_API_KEY or not DEEPGRAM_API_KEY or not ELEVENLABS_API_KEY:
     raise ValueError("Set GEMINI_API_KEY, DEEPGRAM_API_KEY, ELEVENLABS_API_KEY in .env")
 
-genai.configure(api_key=GEMINI_API_KEY)
+#new
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 # Knowledge pack 
 '''
@@ -249,8 +250,10 @@ If their budget is low → lean Footscray. Medium → Abbotsford/Collingwood. Hi
 Be helpful and slightly salesy. Never push finance/legal advice — refer to {KNOWLEDGE_PACK['handoff_email']}.
 """
 
-    model = genai.GenerativeModel("gemini-2.5-flash-lite")
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(
+        model="gemini-2.5-flash-lite",   
+        contents=prompt
+    )
     return response.text.strip()
 
 # ---------------------------
