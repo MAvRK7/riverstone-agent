@@ -51,7 +51,7 @@ st.markdown("""
 
 # Main Hero Image
 st.image(
-    "hero_img.jpg", 
+    "images/hero_img.jpg", 
     use_container_width=True,
     caption="Discover modern living across Melbourne's best inner suburbs"
 )
@@ -61,23 +61,23 @@ st.markdown("### Our Current Projects")
 # Project Cards (beautiful side-by-side)
 col1, col2 = st.columns(2)
 with col1:
-    st.image("riverstone.png", use_container_width=True)
+    st.image("images/riverstone.png", use_container_width=True)
     st.markdown("**Riverstone Place** — Abbotsford")
     st.caption("Leafy, riverside living • from $585k")
 
 with col2:
-    st.image("harbourview.png", use_container_width=True)
+    st.image("images/harbourview.png", use_container_width=True)
     st.markdown("**Harbourview Towers** — Richmond")
     st.caption("Vibrant & central • from $720k")
 
 col3, col4 = st.columns(2)
 with col3:
-    st.image("yarra_edge.png", use_container_width=True)
+    st.image("images/yarra_edge.png", use_container_width=True)
     st.markdown("**Yarra Edge** — Footscray")
     st.caption("Best value + food scene • from $520k")
 
 with col4:
-    st.image("collingwood.png", use_container_width=True)
+    st.image("images/collingwood.png", use_container_width=True)
     st.markdown("**Collingwood Quarter** — Collingwood")
     st.caption("Hip & creative • from $635k")
 
