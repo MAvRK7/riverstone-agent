@@ -164,6 +164,7 @@ if submitted:
             if BACKEND_API_KEY:
                 headers["Authorization"] = f"Bearer {BACKEND_API_KEY}"
             resp = requests.post(BACKEND_URL, json=data, headers=headers, timeout=30)
+            st.info(f"Debug: Requested {BACKEND_URL} → Status: {resp.status_code}")  # temporary
             resp.raise_for_status()
             result = resp.json()
             if result.get("booking") and result["booking"].get("ok"):
