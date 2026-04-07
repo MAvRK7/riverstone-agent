@@ -38,6 +38,22 @@ BACKEND_API_KEY = os.getenv("BACKEND_API_KEY")  # Optional backend auth
 st.set_page_config(page_title="Riverstone Voice Agent", layout="centered")
 st.title("Riverstone Voice Agent")
 
+# Hero Section
+st.markdown("""
+    <h2 style='text-align: center; color: #1E3A8A;'>Find Your Perfect Home Across Melbourne</h2>
+    <p style='text-align: center; font-size: 1.1em;'>
+        Riverstone Place • Harbourview Towers • Yarra Edge • Collingwood Quarter<br>
+        <strong>Expert guidance from Harbourline Developments</strong>
+    </p>
+""", unsafe_allow_html=True)
+
+# Main Property Image 
+st.image(
+    "hero_image.jpg", 
+    use_container_width=True,
+    caption="Riverstone Place, Abbotsford — Modern living by the Yarra"
+)
+
 # --------------------------
 # Prefilled test data
 # --------------------------
@@ -53,7 +69,8 @@ default_data = {
     "owner_occ": True,
     "finance_status": "Pre-approved",
     "preferred_suburbs": "Abbotsford,Riverstone",
-    "preferred_slot": ""
+    "preferred_slot": "",
+    "additional_info": ""
 }
 
 # --------------------------
@@ -80,6 +97,11 @@ with st.form("user_input_form"):
     )
     preferred_suburbs = st.text_input("Preferred suburbs (comma-separated)", value=default_data["preferred_suburbs"])
     preferred_slot = st.text_input("Preferred appointment slot (optional ISO datetime)", value=default_data["preferred_slot"])
+    additional_info = st.text_area(
+        "Anything else we should know? (optional — e.g. must-have features, lifestyle needs, etc.)",
+        value="",
+        height=80
+    )
     submitted = st.form_submit_button("Send")
 
 # --------------------------
@@ -97,8 +119,9 @@ if submitted:
         "timeframe": timeframe,
         "owner_occ": owner_occ,
         "finance_status": finance_status,
-        "preferred_suburbs": [s.strip() for s in preferred_suburbs.split(",")],
-        "preferred_slot": preferred_slot
+        "preferred_suburbs": [s.strip() for s in preferred_suburbs.split(",") if s.strip()],
+        "preferred_slot": preferred_slot,
+        "additional_info": additional_info
     }
 
     with st.spinner("Contacting Riverstone Agent..."):
@@ -109,6 +132,14 @@ if submitted:
             resp = requests.post(BACKEND_URL, json=data, headers=headers, timeout=30)
             resp.raise_for_status()
             result = resp.json()
+            if result.get("booking") and result["booking"].get("ok"):
+                booking = result["booking"]
+                st.subheader("🎉 Booking Confirmed")
+                st.markdown(f"**Booking ID:** {booking.get('booking_id')}")
+                st.markdown(f"**Slot:** {booking.get('slot')}")
+                st.success(booking.get('message'))
+            elif result.get("human_handoff"):
+                st.success("✅ Great choice! Our sales team will call you within 24 hours to arrange a personal chat.")
             agent_text = result.get("response", "No response from agent.")
         except requests.exceptions.HTTPError as e:
             st.error("Sorry, we couldn’t connect to the agent. Please try again later.")
@@ -121,6 +152,9 @@ if submitted:
 
     st.subheader("Agent Response")
     st.write(agent_text)
+
+    st.divider()
+    st.caption("💡 Tip: Ask about specific suburbs (Abbotsford, Richmond, Footscray, Collingwood) or tell us what lifestyle you want — the agent will suggest the best match.")
 
     # --------------------------
     # Text-to-Speech
@@ -167,14 +201,3 @@ if submitted:
     if not tts_played:
         st.warning("🔊 Audio unavailable right now — you can still read the response above.")
 
-    # --------------------------
-    # Display booking info
-    # --------------------------
-    if "booking" in result:
-        booking = result["booking"]
-        st.subheader("Booking Confirmation")
-        st.markdown(f"**Booking ID:** {booking.get('booking_id', 'N/A')}")
-        st.markdown(f"**Slot:** {booking.get('slot', 'N/A')}")
-        st.markdown(f"**Mode:** {booking.get('mode', 'N/A')}")
-        st.markdown(f"**Status:** {booking.get('status', 'N/A')}")
-        st.markdown(f"**Message:** {booking.get('message', 'N/A')}")
