@@ -38,7 +38,9 @@ BACKEND_API_KEY = os.getenv("BACKEND_API_KEY")  # Optional backend auth
 st.set_page_config(page_title="Riverstone Voice Agent", layout="centered")
 st.title("Riverstone Voice Agent")
 
-# Hero Section
+# --------------------------
+# Hero Section + Main Image
+# --------------------------
 st.markdown("""
     <h2 style='text-align: center; color: #1E3A8A;'>Find Your Perfect Home Across Melbourne</h2>
     <p style='text-align: center; font-size: 1.1em;'>
@@ -47,12 +49,39 @@ st.markdown("""
     </p>
 """, unsafe_allow_html=True)
 
-# Main Property Image 
+# Main Hero Image
 st.image(
     "hero_image.jpg", 
     use_container_width=True,
-    caption="Riverstone Place, Abbotsford — Modern living by the Yarra"
+    caption="Discover modern living across Melbourne's best inner suburbs"
 )
+
+st.markdown("### Our Current Projects")
+
+# Project Cards (beautiful side-by-side)
+col1, col2 = st.columns(2)
+with col1:
+    st.image("riverstone.png", use_container_width=True)
+    st.markdown("**Riverstone Place** — Abbotsford")
+    st.caption("Leafy, riverside living • from $585k")
+
+with col2:
+    st.image("harbourview.png", use_container_width=True)
+    st.markdown("**Harbourview Towers** — Richmond")
+    st.caption("Vibrant & central • from $720k")
+
+col3, col4 = st.columns(2)
+with col3:
+    st.image("yarra_edge.png", use_container_width=True)
+    st.markdown("**Yarra Edge** — Footscray")
+    st.caption("Best value + food scene • from $520k")
+
+with col4:
+    st.image("collingwood.png", use_container_width=True)
+    st.markdown("**Collingwood Quarter** — Collingwood")
+    st.caption("Hip & creative • from $635k")
+
+st.divider()
 
 # --------------------------
 # Prefilled test data
@@ -154,7 +183,7 @@ if submitted:
     st.write(agent_text)
 
     st.divider()
-    st.caption("💡 Tip: Ask about specific suburbs (Abbotsford, Richmond, Footscray, Collingwood) or tell us what lifestyle you want — the agent will suggest the best match.")
+    st.caption("💡 Tip: Tell us your lifestyle (quiet, vibrant, budget-focused, near parks, etc.) and we’ll suggest the best suburb for you.")
 
     # --------------------------
     # Text-to-Speech
