@@ -9,8 +9,8 @@ from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
 from dotenv import load_dotenv
-import google.generativeai as genai
-from fastapi.responses import JSONResponse
+from google import genai
+
 
 load_dotenv()
 
@@ -242,13 +242,14 @@ User details:
 • Finance: {call.finance_status}
 • Owner-occupier: {call.owner_occ}
 • Extra note: {call.message}
+• Additional: {getattr(call, 'additional_info', '')}
 
-Based on what they told you, recommend the BEST matching suburb/project and why it fits them.
+Based on what they told you, recommend thESe BT matching suburb/project and why it fits them.
 If their budget is low → lean Footscray. Medium → Abbotsford/Collingwood. High → Richmond.
 Be helpful and slightly salesy. Never push finance/legal advice — refer to {KNOWLEDGE_PACK['handoff_email']}.
 """
 
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-2.5-flash-lite")
     response = model.generate_content(prompt)
     return response.text.strip()
 
