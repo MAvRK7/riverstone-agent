@@ -54,7 +54,9 @@ def play_agent_audio_from_base64(audio_base64: str):
         return
 
     audio_bytes = base64.b64decode(audio_base64)
-    st.audio(BytesIO(audio_bytes), format="audio/mp3")
+
+    # ✅ Pass raw bytes, NOT BytesIO
+    st.audio(audio_bytes, format="audio/mp3")
 
 
 st.set_page_config(page_title="Riverstone Voice Agent", layout="centered")
