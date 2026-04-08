@@ -4,7 +4,6 @@ import requests
 import base64
 import streamlit as st
 from dotenv import load_dotenv
-from io import BytesIO
 from gtts import gTTS
 from datetime import datetime
 import logging
@@ -21,19 +20,6 @@ def iso_to_readable(iso_str):
     dt = datetime.fromisoformat(iso_str)
     return dt.strftime("%a %d %b %I:%M %p")
 
-# For TTS services
-try:
-    import pyttsx3
-    PYTTSX3_AVAILABLE = True
-except ImportError:
-    PYTTSX3_AVAILABLE = False
-
-# ElevenLabs
-try:
-    from elevenlabs.client import ElevenLabs
-    ELEVENLABS_AVAILABLE = True
-except ImportError:
-    ELEVENLABS_AVAILABLE = False
 
 # --------------------------
 # Load environment variables
@@ -207,7 +193,7 @@ if submitted:
 
             # Store in session state for persistence
             st.session_state.agent_text = result.get("response", "No response from agent.")
-            st.session_state.agent_audio = result.get("audio_base64")
+            # st.session_state.agent_audio = result.get("audio_base64")
             st.session_state.booking = result.get("booking") if result.get("booking") and result["booking"].get("ok") else None
             st.session_state.last_data = data  # for follow-ups
             st.session_state.follow_up_mode = False  # reset
@@ -258,10 +244,19 @@ if "agent_text" in st.session_state:
     st.subheader("Agent Response")
     st.write(st.session_state.agent_text)
 
-    # Safe audio handling
-    agent_audio = st.session_state.get("agent_audio")
-    if agent_audio and st.button("🔊 Play Agent Response (Voice)", key="play_agent_voice"):
-        play_agent_audio_from_base64(agent_audio)
+    if st.button("🔊 Play Agent Response (Voice)", key="play_voice"):
+        try:
+            tts = gTTS(text=st.session_state.agent_text[:300], lang="en")
+            tts.save("temp.mp3")
+
+            with open("temp.mp3", "rb") as f:
+                audio_bytes = f.read()
+
+            st.audio(audio_bytes, format="audio/mpeg")
+
+        except Exception as e:
+            st.error(f"TTS failed: {e}")
+
 
     st.divider()
 
@@ -318,10 +313,7 @@ if st.session_state.get("follow_up_mode", False):
                     st.subheader("Agent Follow-up Response")
                     st.write(st.session_state.followup_text)
 
-                    # Voice for follow-up
-                    st.session_state.followup_audio = new_result.get("audio_base64")
-                    if st.session_state.get("followup_audio") and st.button("🔊 Play Follow-up Response", key="play_followup_voice"):
-                        play_agent_audio_from_base64(st.session_state.followup_audio)
+
 
                     # -----------------------
                     # Save follow-up to chat history

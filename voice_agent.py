@@ -1,4 +1,3 @@
-import base64
 import os
 import json
 import string
@@ -6,15 +5,10 @@ import sqlite3
 import time
 import logging
 from collections import defaultdict
-import tempfile
 from datetime import datetime, timedelta, timezone
-import pyttsx3
 import pytz
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
-from elevenlabs.client import ElevenLabs
-from io import BytesIO
-from gtts import gTTS
 from dotenv import load_dotenv
 from google import genai
 from mistralai.client import Mistral #v2
@@ -49,45 +43,13 @@ else:
 GEMINI_MODEL = "gemini-2.5-flash"
 MISTRAL_MODEL = "mistral-small-latest"
 
-eleven_client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
+
 
 
 #---------------------------
 # Voice 
 #---------------------------
 
-def generate_tts_audio(text: str) -> BytesIO | None:
-    if not text or not text.strip():
-        return None
-
-    try:
-        engine = pyttsx3.init()
-
-        # Optional: make it faster / less robotic
-        engine.setProperty('rate', 170)
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as fp:
-            temp_path = fp.name
-
-        # Save speech to file
-        engine.save_to_file(text[:300], temp_path)
-        engine.runAndWait()
-
-        # Read audio
-        with open(temp_path, "rb") as f:
-            audio_bytes = f.read()
-
-        os.remove(temp_path)
-
-        buffer = BytesIO(audio_bytes)
-        buffer.seek(0)
-
-        return buffer
-
-    except Exception as e:
-        logging.error(f"pyttsx3 failed: {e}", exc_info=True)
-        return None
 '''
 def generate_tts_audio(text: str) -> BytesIO:
     """
@@ -501,10 +463,6 @@ async def handle_call(call: CallRequest, request: Request):
     # Generate natural response using Gemini
     agent_reply = await generate_agent_response(call)
 
-    audio_buffer = generate_tts_audio(agent_reply)
-    audio_base64 = None
-    if audio_buffer:
-        audio_base64 = base64.b64encode(audio_buffer.read()).decode("utf-8")
 
     # Log lead
     lead_data = {
@@ -528,7 +486,6 @@ async def handle_call(call: CallRequest, request: Request):
 
     return {
         "response": agent_reply,
-        "audio_base64": audio_base64,
         "booking": booking if booking["ok"] else None,
         "human_handoff": human_handoff,
         "lead_logged": True
