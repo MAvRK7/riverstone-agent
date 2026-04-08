@@ -8,6 +8,7 @@ import logging
 from collections import defaultdict
 import tempfile
 from datetime import datetime, timedelta, timezone
+import pyttsx3
 import pytz
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
@@ -61,14 +62,19 @@ def generate_tts_audio(text: str) -> BytesIO | None:
         return None
 
     try:
-        tts = gTTS(text=text[:300], lang="en", slow=False)
+        engine = pyttsx3.init()
 
-        # ✅ ALWAYS write to temp file (more reliable than BytesIO)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
+        # Optional: make it faster / less robotic
+        engine.setProperty('rate', 170)
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as fp:
             temp_path = fp.name
-            tts.save(temp_path)
 
-        # ✅ Read clean MP3 bytes
+        # Save speech to file
+        engine.save_to_file(text[:300], temp_path)
+        engine.runAndWait()
+
+        # Read audio
         with open(temp_path, "rb") as f:
             audio_bytes = f.read()
 
@@ -80,7 +86,7 @@ def generate_tts_audio(text: str) -> BytesIO | None:
         return buffer
 
     except Exception as e:
-        logging.error(f"TTS failed: {e}", exc_info=True)
+        logging.error(f"pyttsx3 failed: {e}", exc_info=True)
         return None
 '''
 def generate_tts_audio(text: str) -> BytesIO:

@@ -56,7 +56,7 @@ def play_agent_audio_from_base64(audio_base64: str):
     try:
         audio_bytes = base64.b64decode(audio_base64)
         st.write(f"🔊 Audio size: {len(audio_bytes)} bytes")  # DEBUG
-        st.audio(audio_bytes, format="audio/mpeg")
+        st.audio(audio_bytes, format="audio/wav")
     except Exception as e:
         st.error(f"Audio failed: {e}")
 
