@@ -8,4 +8,4 @@ fastapi
 uvicorn
 google-genai
 pyttsx3
-
+pytz
