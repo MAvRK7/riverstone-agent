@@ -1,17 +1,25 @@
 # app.py
 import os
 import requests
+import base64
 import streamlit as st
 from dotenv import load_dotenv
 from io import BytesIO
 from gtts import gTTS
-from elevenlabs.client import ElevenLabs
-import tempfile
+from datetime import datetime
 import logging
 
 # Configure logging to output to Streamlit logs
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger(__name__)
+
+# --------------------------
+# Utility Functions
+# --------------------------
+def iso_to_readable(iso_str):
+    """Convert ISO datetime string to a human-readable format."""
+    dt = datetime.fromisoformat(iso_str)
+    return dt.strftime("%a %d %b %I:%M %p")
 
 # For TTS services
 try:
@@ -22,6 +30,7 @@ except ImportError:
 
 # ElevenLabs
 try:
+    from elevenlabs.client import ElevenLabs
     ELEVENLABS_AVAILABLE = True
 except ImportError:
     ELEVENLABS_AVAILABLE = False
@@ -40,52 +49,22 @@ ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 BACKEND_API_KEY = os.getenv("BACKEND_API_KEY")  # Optional backend auth
 
-def play_agent_audio(text: str):
-    """Helper to play audio - tries ElevenLabs then falls back to gTTS"""
-    if not text:
-        st.warning("No text to speak.")
+def play_agent_audio_from_base64(audio_base64: str):
+    if not audio_base64:
         return
 
-    tts_played = False
-
-    # Try ElevenLabs first (premium voice)
-    if ELEVENLABS_AVAILABLE and ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID:
-        try:
-            client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
-            audio_generator = client.text_to_speech.convert(
-                text=text[:800],
-                voice_id=ELEVENLABS_VOICE_ID,
-                model_id="eleven_multilingual_v2",
-                output_format="mp3_44100_128"
-            )
-            audio_buffer = BytesIO()
-            for chunk in audio_generator:
-                if chunk:
-                    audio_buffer.write(chunk)
-            audio_buffer.seek(0)
-            st.audio(audio_buffer, format="audio/mp3")
-            tts_played = True
-            return
-        except Exception as e:
-            logger.warning(f"ElevenLabs failed: {e}")
-
-    # Fallback to gTTS (most reliable on Streamlit Cloud)
-    try:
-        tts = gTTS(text=text[:500], lang="en", slow=False)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
-            tts.save(fp.name)
-            st.audio(fp.name, format="audio/mp3")
-            tts_played = True
-    except Exception as e:
-        logger.warning(f"gTTS failed: {e}")
-
-    if not tts_played:
-        st.warning("🔊 Audio currently unavailable. Please read the response above.")
+    audio_bytes = base64.b64decode(audio_base64)
+    st.audio(BytesIO(audio_bytes), format="audio/mp3")
 
 
 st.set_page_config(page_title="Riverstone Voice Agent", layout="centered")
+
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
 if "follow_up_mode" not in st.session_state:
     st.session_state.follow_up_mode = False
+
 st.title("Riverstone Voice Agent")
 
 # --------------------------
@@ -186,9 +165,7 @@ with st.form("user_input_form"):
 # --------------------------
 # Send request to backend
 # --------------------------
-# --------------------------
-# Send request to backend
-# --------------------------
+
 if submitted:
     data = {
         "name": name,
@@ -203,7 +180,8 @@ if submitted:
         "finance_status": finance_status,
         "preferred_suburbs": [s.strip() for s in preferred_suburbs.split(",") if s.strip()],
         "preferred_slot": preferred_slot,
-        "additional_info": additional_info
+        "additional_info": additional_info,
+        "chat_history": st.session_state.chat_history,
     }
 
     with st.spinner("Contacting Riverstone Agent..."):
@@ -211,9 +189,17 @@ if submitted:
             headers = {"Content-Type": "application/json"}
             if BACKEND_API_KEY:
                 headers["Authorization"] = f"Bearer {BACKEND_API_KEY}"
-            resp = requests.post(BACKEND_URL, json=data, headers=headers, timeout=30)
+            resp = requests.post(BACKEND_URL, json=data, headers=headers, timeout=40)
             resp.raise_for_status()
             result = resp.json()
+
+            #--------------------
+            # Save chat history
+            #--------------------
+            st.session_state.chat_history.append({
+                "user": data["message"],
+                "agent": result.get("response", "")
+            })
 
             # Store in session state for persistence
             st.session_state.agent_text = result.get("response", "No response from agent.")
@@ -226,7 +212,18 @@ if submitted:
                 st.success("✅ Based on your requirements, we've scheduled an appointment with our sales team.")
                 st.subheader("🎉 Booking Confirmed")
                 st.markdown(f"**Booking ID:** {st.session_state.booking.get('booking_id', 'N/A')}")
-                st.markdown(f"**Slot:** {st.session_state.booking.get('slot', 'N/A')}")
+                # st.markdown(f"**Slot:** {st.session_state.booking.get('slot', 'N/A')}")
+                slot_iso = st.session_state.booking.get('slot')
+                if slot_iso:
+                    try:
+                        readable_slot = iso_to_readable(slot_iso)
+                    except Exception as e:
+                        logger.warning(f"Failed to parse ISO datetime: {e}")
+                        readable_slot = slot_iso  # fallback to raw string
+                else:
+                    readable_slot = "N/A"
+    
+                st.markdown(f"**Slot:** {readable_slot}")
                 st.success(st.session_state.booking.get('message', 'Appointment booked successfully'))
 
         except requests.exceptions.HTTPError as e:
@@ -250,8 +247,9 @@ if "agent_text" in st.session_state:
     st.write(st.session_state.agent_text)
 
     # Voice Button
+    st.session_state.agent_audio = result.get("audio_base64")
     if st.button("🔊 Play Agent Response (Voice)", key="play_agent_voice"):
-        play_agent_audio(st.session_state.agent_text)
+        play_agent_audio_from_base64(st.session_state.agent_audio)
 
     st.divider()
 
@@ -292,6 +290,7 @@ if st.session_state.get("follow_up_mode", False):
         if follow_up_text and "last_data" in st.session_state:
             follow_up_data = st.session_state.last_data.copy()
             follow_up_data["message"] = follow_up_text
+            follow_up_data["chat_history"] = st.session_state.chat_history
 
             with st.spinner("Asking agent..."):
                 try:
@@ -308,14 +307,29 @@ if st.session_state.get("follow_up_mode", False):
                     st.write(st.session_state.followup_text)
 
                     # Voice for follow-up
+                    st.session_state.followup_audio = new_result.get("audio_base64")
                     if st.button("🔊 Play Follow-up Response", key="play_followup_voice"):
-                        play_agent_audio(st.session_state.followup_text)
+                        play_agent_audio_from_base64(st.session_state.followup_audio)
+
+                    # -----------------------
+                    # Save follow-up to chat history
+                    # -----------------------
+                    st.session_state.chat_history.append({
+                    "user": follow_up_text,
+                    "agent": st.session_state.followup_text
+                    })
+
+                    # Reset follow-up mode
+                    st.session_state.follow_up_mode = False
+                    if "follow_up_text" in st.session_state:
+                        del st.session_state.follow_up_text
+                    st.rerun()
 
                 except Exception as e:
                     st.error("Sorry, could not get follow-up response.")
                     logger.error(f"Follow-up error: {e}")
 
-        # Reset follow-up mode and input
         st.session_state.follow_up_mode = False
-        st.session_state.follow_up_text = ""
+        if "follow_up_text" in st.session_state:
+            del st.session_state.follow_up_text
         st.rerun()

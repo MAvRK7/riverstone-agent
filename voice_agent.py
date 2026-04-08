@@ -1,13 +1,19 @@
+import base64
 import os
-import asyncio
 import json
 import string
 import sqlite3
 import time
+import logging
 from collections import defaultdict
+import tempfile
 from datetime import datetime, timedelta, timezone
+import pytz
 from fastapi import FastAPI, Request, HTTPException
 from pydantic import BaseModel
+from elevenlabs.client import ElevenLabs
+from io import BytesIO
+from gtts import gTTS
 from dotenv import load_dotenv
 from google import genai
 
@@ -21,11 +27,65 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
-if not GEMINI_API_KEY or not DEEPGRAM_API_KEY or not ELEVENLABS_API_KEY:
-    raise ValueError("Set GEMINI_API_KEY, DEEPGRAM_API_KEY, ELEVENLABS_API_KEY in .env")
+if not GEMINI_API_KEY or not ELEVENLABS_API_KEY:
+    raise ValueError("Set GEMINI_API_KEY and ELEVENLABS_API_KEY")
+
+eleven_client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 
 #new
 client = genai.Client(api_key=GEMINI_API_KEY)
+
+#ElevenLabs Voice
+def generate_tts_audio(text: str) -> BytesIO:
+    """
+    Generate TTS audio.
+    Priority: ElevenLabs → fallback to gTTS
+    Returns: BytesIO buffer (mp3)
+    """
+
+    # -------------------------
+    # Try ElevenLabs first
+    # -------------------------
+    if ELEVENLABS_VOICE_ID:
+        try:
+            audio_stream = eleven_client.text_to_speech.convert(
+                text = text[:800].rsplit(".", 1)[0],
+                voice_id=ELEVENLABS_VOICE_ID,
+                model_id="eleven_multilingual_v2",
+                output_format="mp3_44100_128"
+            )
+
+            buffer = BytesIO()
+            for chunk in audio_stream:
+                if chunk:
+                    buffer.write(chunk)
+            buffer.seek(0)
+
+            return buffer
+
+        except Exception as e:
+            logging.warning(f"ElevenLabs failed: {e}")
+
+    # -------------------------
+    # Fallback: gTTS
+    # -------------------------
+    try:
+        tts = gTTS(text=text[:500], lang="en", slow=False)
+
+        with tempfile.NamedTemporaryFile(delete=True, suffix=".mp3") as fp:
+            tts.save(fp.name)
+
+            with open(fp.name, "rb") as f:
+                buffer = BytesIO(f.read())
+
+        buffer.seek(0)
+        return buffer
+
+    except Exception as e:
+        logging.error(f"gTTS also failed: {e}")
+
+    return None
 
 # Knowledge pack 
 '''
@@ -103,14 +163,38 @@ KNOWLEDGE_PACK = {
 }
 
 # Appointment slots with ISO datetime
-APPOINTMENT_SLOTS = [
-    "2025-09-26T10:00:00+10:00", "2025-09-26T13:00:00+10:00", "2025-09-26T16:00:00+10:00",
-    "2025-09-27T10:00:00+10:00", "2025-09-27T13:00:00+10:00", "2025-09-27T16:00:00+10:00",
-    "2025-09-28T10:00:00+10:00", "2025-09-28T13:00:00+10:00", "2025-09-28T16:00:00+10:00",
-    "2025-09-29T10:00:00+10:00", "2025-09-29T13:00:00+10:00", "2025-09-29T16:00:00+10:00",
-    "2025-09-30T10:00:00+10:00", "2025-09-30T13:00:00+10:00", "2025-09-30T16:00:00+10:00",
-    "2025-10-04T10:00:00+10:00", "2025-10-04T12:00:00+10:00"
-]
+MELBOURNE_TZ = pytz.timezone("Australia/Melbourne")
+
+def generate_appointment_slots(
+    days_ahead=7,
+    slots_per_day=[10, 13, 16],  # 10AM, 1PM, 4PM
+    include_weekends=False
+):
+    slots = []
+    now = datetime.now(MELBOURNE_TZ)
+
+    for day_offset in range(days_ahead):
+        day = now + timedelta(days=day_offset)
+
+        # Skip weekends if needed
+        if not include_weekends and day.weekday() >= 5:
+            continue
+
+        for hour in slots_per_day:
+            slot_time = day.replace(
+                hour=hour,
+                minute=0,
+                second=0,
+                microsecond=0
+            )
+
+            # Only future slots
+            if slot_time > now:
+                slots.append(slot_time.isoformat())
+
+    return slots
+
+APPOINTMENT_SLOTS = generate_appointment_slots(days_ahead=10)
 
 
 # ---------------------------
@@ -189,6 +273,7 @@ class CallRequest(BaseModel):
     preferred_suburbs: list
     preferred_slot: str = None
     additional_info: str = ""
+    chat_history: list = []
 
 # ---------------------------
 # Helpers
@@ -222,12 +307,30 @@ async def generate_agent_response(call: CallRequest):
     # Quick unsubscribe
     if any(word in msg for word in ["stop", "unsubscribe", "do not call"]):
         return "No worries at all — you won’t be contacted again. Have a great day!"
+    
+    # -------------------------------
+    # Build conversation history
+    # -------------------------------
+    history_text = ""
+    if hasattr(call, "chat_history") and call.chat_history:
+        # Include last 5 turns only
+        for turn in call.chat_history[-5:]:
+            history_text += f"User: {turn['user']}\nAgent: {turn['agent']}\n"
+
 
     # Build smart prompt
     prompt = f"""
 You are an experienced, friendly Melbourne real estate sales agent for Harbourline Developments.
 Speak like a real person — warm, confident, short sentences, never robotic.
 Maximum 3-4 sentences. End with ONE question or clear next step to keep the conversation going.
+Speak conversationally like you're talking on a phone call.
+Use fillers occasionally like "gotcha", "no worries", "great question".
+
+Conversation so far:
+{history_text}
+
+User just said:
+{call.message}
 
 Our current projects:
 - Riverstone Place (Abbotsford): {KNOWLEDGE_PACK['projects'][0]['price_2bed']}, leafy & quiet
@@ -245,7 +348,8 @@ User details:
 • Extra note: {call.message}
 • Additional: {getattr(call, 'additional_info', '')}
 
-Based on what they told you, recommend thESe BT matching suburb/project and why it fits them.
+Based on what they told you, recommend the BEST matching suburb/project based on their needs.
+Avoid repeating the same recommendation unless the user insists.
 If their budget is low → lean Footscray. Medium → Abbotsford/Collingwood. High → Richmond.
 Be helpful and slightly salesy. Never push finance/legal advice — refer to {KNOWLEDGE_PACK['handoff_email']}.
 """
@@ -277,15 +381,17 @@ async def handle_call(call: CallRequest, request: Request):
     interest_score = 0
     if call.budget >= 800000: interest_score += 2
     if call.beds >= 2: interest_score += 1
-    if call.timeframe in ["0-3 months", "3-6 months"]: interest_score += 2
+    if call.timeframe in ["0-3 months", "3-6 months"]: 
+        interest_score += 2
     if any(word in msg_clean for word in ["visit", "see", "appointment", "book", "chat", "meet", "speak", "human"]):
         interest_score += 3
 
     booking = {"ok": False}
     human_handoff = False
 
-    if interest_score >= 5:  # Hot lead → book appointment
-        slot_iso = call.preferred_slot or APPOINTMENT_SLOTS[0]
+    if interest_score >= 6 and "book" in msg_clean:  # Hot lead → book appointment
+        available_slots = generate_appointment_slots()
+        slot_iso = call.preferred_slot if call.preferred_slot in available_slots else available_slots[0]
         mode = "display-suite" if "T10" in slot_iso or "T12" in slot_iso else "video"
         booking = await book_appointment(
             call.name, call.phone, call.email, slot_iso,
@@ -297,6 +403,11 @@ async def handle_call(call: CallRequest, request: Request):
 
     # Generate natural response using Gemini
     agent_reply = await generate_agent_response(call)
+
+    audio_buffer = generate_tts_audio(agent_reply)
+    audio_base64 = None
+    if audio_buffer:
+        audio_base64 = base64.b64encode(audio_buffer.read()).decode("utf-8")
 
     # Log lead
     lead_data = {
@@ -320,6 +431,7 @@ async def handle_call(call: CallRequest, request: Request):
 
     return {
         "response": agent_reply,
+        "audio_base64": audio_base64,
         "booking": booking if booking["ok"] else None,
         "human_handoff": human_handoff,
         "lead_logged": True
