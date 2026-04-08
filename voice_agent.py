@@ -55,25 +55,32 @@ ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 #---------------------------
 # Voice 
 #---------------------------
+
 def generate_tts_audio(text: str) -> BytesIO | None:
-    """Generate TTS using gTTS only (ElevenLabs is currently blocked)."""
     if not text or not text.strip():
         return None
 
     try:
-        # Use gTTS directly
-        tts = gTTS(text=text[:750], lang="en", slow=False)
+        tts = gTTS(text=text[:300], lang="en", slow=False)
 
-        # Save directly to BytesIO in memory (no temp file needed)
-        buffer = BytesIO()
-        tts.write_to_fp(buffer)          # This is the recommended way
+        # ✅ ALWAYS write to temp file (more reliable than BytesIO)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as fp:
+            temp_path = fp.name
+            tts.save(temp_path)
+
+        # ✅ Read clean MP3 bytes
+        with open(temp_path, "rb") as f:
+            audio_bytes = f.read()
+
+        os.remove(temp_path)
+
+        buffer = BytesIO(audio_bytes)
         buffer.seek(0)
 
-        logging.info("✅ TTS generated successfully with gTTS")
         return buffer
 
     except Exception as e:
-        logging.error(f"gTTS failed: {type(e).__name__} - {str(e)}", exc_info=True)
+        logging.error(f"TTS failed: {e}", exc_info=True)
         return None
 '''
 def generate_tts_audio(text: str) -> BytesIO:
@@ -125,7 +132,7 @@ def generate_tts_audio(text: str) -> BytesIO:
         logging.error(f"gTTS also failed: {e}")
 
     return None
-    '''
+'''
 
 # Knowledge pack 
 '''

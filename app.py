@@ -51,12 +51,14 @@ BACKEND_API_KEY = os.getenv("BACKEND_API_KEY")  # Optional backend auth
 
 def play_agent_audio_from_base64(audio_base64: str):
     if not audio_base64:
+        st.warning("No audio received")
         return
-
-    audio_bytes = base64.b64decode(audio_base64)
-
-    # ✅ Pass raw bytes, NOT BytesIO
-    st.audio(audio_bytes, format="audio/mp3")
+    try:
+        audio_bytes = base64.b64decode(audio_base64)
+        st.write(f"🔊 Audio size: {len(audio_bytes)} bytes")  # DEBUG
+        st.audio(audio_bytes, format="audio/mpeg")
+    except Exception as e:
+        st.error(f"Audio failed: {e}")
 
 
 st.set_page_config(page_title="Riverstone Voice Agent", layout="centered")
