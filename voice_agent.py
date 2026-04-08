@@ -52,7 +52,30 @@ eleven_client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 
 
-#ElevenLabs Voice
+#---------------------------
+# Voice 
+#---------------------------
+def generate_tts_audio(text: str) -> BytesIO | None:
+    """Generate TTS using gTTS only (ElevenLabs is currently blocked)."""
+    if not text or not text.strip():
+        return None
+
+    try:
+        # Use gTTS directly
+        tts = gTTS(text=text[:750], lang="en", slow=False)
+
+        # Save directly to BytesIO in memory (no temp file needed)
+        buffer = BytesIO()
+        tts.write_to_fp(buffer)          # This is the recommended way
+        buffer.seek(0)
+
+        logging.info("✅ TTS generated successfully with gTTS")
+        return buffer
+
+    except Exception as e:
+        logging.error(f"gTTS failed: {type(e).__name__} - {str(e)}", exc_info=True)
+        return None
+'''
 def generate_tts_audio(text: str) -> BytesIO:
     """
     Generate TTS audio.
@@ -102,6 +125,7 @@ def generate_tts_audio(text: str) -> BytesIO:
         logging.error(f"gTTS also failed: {e}")
 
     return None
+    '''
 
 # Knowledge pack 
 '''
@@ -398,7 +422,7 @@ Be helpful and slightly salesy. Never push finance/legal advice — refer to {KN
                 messages=[
                     {
                         "role": "system",
-                        "content": "You are a friendly, professional real estate sales agent for Harbourline Developments in Melbourne. Speak conversationally."
+                        "content": "You are a friendly, professional real estate sales agent for Harbourline Developments in Melbourne. Speak conversationally. No markdown"
                     },
                     {
                         "role": "user",
