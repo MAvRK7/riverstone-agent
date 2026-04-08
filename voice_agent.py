@@ -16,6 +16,7 @@ from io import BytesIO
 from gtts import gTTS
 from dotenv import load_dotenv
 from google import genai
+from mistralai.client import Mistral #v2
 
 
 load_dotenv()
@@ -23,18 +24,33 @@ load_dotenv()
 # ---------------------------
 # CONFIG
 # ---------------------------
+# Model API keys
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 
 if not GEMINI_API_KEY or not ELEVENLABS_API_KEY:
     raise ValueError("Set GEMINI_API_KEY and ELEVENLABS_API_KEY")
 
+#Gemini Client
+gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+
+mistral_client = None
+if MISTRAL_API_KEY:
+    mistral_client = Mistral(api_key=MISTRAL_API_KEY)
+else:
+    logging.warning("MISTRAL_API_KEY is not set — Mistral fallback will not work")
+
+#MODELS
+# "gemini-2.5-flash-lite"
+GEMINI_MODEL = "gemini-2.5-flash"
+MISTRAL_MODEL = "mistral-small-latest"
+
 eleven_client = ElevenLabs(api_key=ELEVENLABS_API_KEY)
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 
-#new
-client = genai.Client(api_key=GEMINI_API_KEY)
 
 #ElevenLabs Voice
 def generate_tts_audio(text: str) -> BytesIO:
@@ -354,11 +370,55 @@ If their budget is low → lean Footscray. Medium → Abbotsford/Collingwood. Hi
 Be helpful and slightly salesy. Never push finance/legal advice — refer to {KNOWLEDGE_PACK['handoff_email']}.
 """
 
-    response = client.models.generate_content(
-        model="gemini-2.5-flash-lite",   
-        contents=prompt
-    )
-    return response.text.strip()
+    # ========================
+    # 1. Try Gemini first
+    # ========================
+    if gemini_client:
+        try:
+            response = gemini_client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt
+            )
+            logging.info("✅ Used Gemini successfully")
+            return response.text.strip()
+        except Exception as e:
+            error_str = str(e).lower()
+            logging.warning(f"Gemini failed: {type(e).__name__} - {str(e)}")
+            
+            if "user location" in error_str or "failed_precondition" in error_str:
+                logging.info("Gemini blocked by location → switching to Mistral")
+
+    # ========================
+    # 2. Fallback to Mistral V2
+    # ========================
+    if mistral_client:
+        try:
+            chat_response = mistral_client.chat.complete(
+                model=MISTRAL_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are a friendly, professional real estate sales agent for Harbourline Developments in Melbourne. Speak conversationally."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                temperature=0.7,
+                max_tokens=700
+            )
+            logging.info(f"✅ Used Mistral ({MISTRAL_MODEL}) successfully as fallback")
+            return chat_response.choices[0].message.content.strip()
+
+        except Exception as e:
+            logging.error(f"Mistral also failed: {type(e).__name__} - {str(e)}", exc_info=True)
+    
+    # ========================
+    # 3. Ultimate fallback (both failed)
+    # ========================
+    logging.error("Both Gemini and Mistral failed — using static fallback")
+    return "Thanks for your message! Based on what you've told me, I'd recommend having a look at **Yarra Edge in Footscray** — excellent value with a great food scene. Would you like more details or to book a quick chat with our team?"
 
 # ---------------------------
 # Core Endpoint
