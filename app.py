@@ -203,6 +203,7 @@ if submitted:
 
             # Store in session state for persistence
             st.session_state.agent_text = result.get("response", "No response from agent.")
+            st.session_state.agent_audio = result.get("audio_base64")
             st.session_state.booking = result.get("booking") if result.get("booking") and result["booking"].get("ok") else None
             st.session_state.last_data = data  # for follow-ups
             st.session_state.follow_up_mode = False  # reset
@@ -253,10 +254,10 @@ if "agent_text" in st.session_state:
     st.subheader("Agent Response")
     st.write(st.session_state.agent_text)
 
-    # Voice Button
-    st.session_state.agent_audio = result.get("audio_base64")
-    if st.button("🔊 Play Agent Response (Voice)", key="play_agent_voice"):
-        play_agent_audio_from_base64(st.session_state.agent_audio)
+    # Safe audio handling
+    agent_audio = st.session_state.get("agent_audio")
+    if agent_audio and st.button("🔊 Play Agent Response (Voice)", key="play_agent_voice"):
+        play_agent_audio_from_base64(agent_audio)
 
     st.divider()
 
@@ -315,7 +316,7 @@ if st.session_state.get("follow_up_mode", False):
 
                     # Voice for follow-up
                     st.session_state.followup_audio = new_result.get("audio_base64")
-                    if st.button("🔊 Play Follow-up Response", key="play_followup_voice"):
+                    if st.session_state.get("followup_audio") and st.button("🔊 Play Follow-up Response", key="play_followup_voice"):
                         play_agent_audio_from_base64(st.session_state.followup_audio)
 
                     # -----------------------
