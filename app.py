@@ -226,9 +226,16 @@ if submitted:
                 st.markdown(f"**Slot:** {readable_slot}")
                 st.success(st.session_state.booking.get('message', 'Appointment booked successfully'))
 
-        except requests.exceptions.HTTPError as e:
-            st.error("Sorry, we couldn’t connect to the agent. Please try again later.")
-            logger.error(f"HTTP Error: {e}")
+        except Exception as e:
+            error_msg = str(e)
+            st.error(f"❌ Backend connection failed: {type(e).__name__}\n\n{error_msg}")
+    
+            if "timeout" in error_msg.lower():
+                st.warning("⏱️ This is likely a cold-start delay on Render Free tier. Try again in 10–20 seconds.")
+            elif "connection" in error_msg.lower():
+                st.warning("🌐 Could not reach the backend. Check if the URL is correct.")
+    
+            logger.error(f"Backend request failed: {type(e).__name__} - {error_msg}", exc_info=True)
             st.stop()
         except Exception as e:
             st.error("An unexpected error occurred. Please try again later.")
