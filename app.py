@@ -166,7 +166,20 @@ if st.button("🎤 Speak Now (Voice Input)", key="voice_btn", type="secondary"):
             if audio_value is not None:
                 st.audio(audio_value, format="audio/wav")
                 st.success("✅ Voice recorded successfully!")
-                st.info("→ Please listen to your recording and type the important parts into the 'Additional Info' box above.")
+                # For now: Ask user to manually type (most reliable)
+                st.info(""" 
+                **Voice recorded successfully!**
+                
+                Please listen to your recording above, then **manually type or copy** the main points into the box above.
+                
+                Example: "I prefer a quiet suburb near the river with good public transport"
+                """)
+
+                # Optional: You can store the audio for future backend transcription
+                st.session_state.last_voice_audio = audio_value
+
+                # Future improvement note
+                st.caption("Auto-transcription coming soon...")
             else:
                 st.warning("No audio was recorded. Try again.")
                 
