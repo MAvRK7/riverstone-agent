@@ -1,7 +1,6 @@
 streamlit
 requests
 python-dotenv
-elevenlabs
 gTTS>=2.3.2
 Pillow>=10.0.0
 fastapi

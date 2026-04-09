@@ -122,16 +122,18 @@ default_data = {
 }
 
 # --------------------------
-# User Input Form
+# User Input Form with Voice Button
 # --------------------------
 with st.form("user_input_form"):
     name = st.text_input("Name", value=default_data["name"])
     phone = st.text_input("Phone", value=default_data["phone"])
     email = st.text_input("Email", value=default_data["email"])
-    message = st.text_area("Your question / message", value=default_data["message"])
+    message = st.text_area("Your question / message", value=default_data["message"], height=100)
+
     budget = st.number_input("Budget (AUD)", min_value=0, value=default_data["budget"])
     beds = st.number_input("Bedrooms", min_value=1, max_value=5, value=default_data["beds"])
     parking = st.number_input("Parking spaces", min_value=0, max_value=3, value=default_data["parking"])
+    
     timeframe = st.selectbox(
         "Timeframe to move",
         ["0-3 months", "3-6 months", "6-12 months", "12+ months"],
@@ -145,11 +147,33 @@ with st.form("user_input_form"):
     )
     preferred_suburbs = st.text_input("Preferred suburbs (comma-separated)", value=default_data["preferred_suburbs"])
     preferred_slot = st.text_input("Preferred appointment slot (optional ISO datetime)", value=default_data["preferred_slot"])
+
+    # Additional Info with Voice Button
+    st.markdown("**Anything else we should know?** (optional — lifestyle, features, etc.)")
+    
     additional_info = st.text_area(
-        "Anything else we should know? (optional — e.g. must-have features, lifestyle needs, etc.)",
+        label="Type here...",
         value="",
-        height=80
+        height=100,
+        key="additional_info_input"
     )
+
+    # Voice Input Button
+    if st.button("🎤 Speak Now (Voice Input)", key="voice_btn", type="secondary"):
+        with st.spinner("🎙️ Listening... Please speak clearly"):
+            try:
+                # Browser Speech Recognition (works best in Chrome/Edge)
+                transcript = st.experimental_audio_input("Record voice", key="temp_voice")
+                
+                if transcript is not None:
+                    st.audio(transcript, format="audio/wav")
+                    st.success("Voice recorded! Please type or copy the main points into the box above for now.")
+                    # In future we can auto-transcribe, but this is reliable for now
+                else:
+                    st.info("No audio recorded. Try again.")
+            except Exception as e:
+                st.error("Voice input not supported in this browser. Please use Chrome or Edge and type manually.")
+
     submitted = st.form_submit_button("Send")
 
 # --------------------------
