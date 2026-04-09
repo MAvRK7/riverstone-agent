@@ -149,42 +149,10 @@ with st.form("user_input_form"):
         "Anything else we should know? (optional — e.g. must-have features, lifestyle needs, etc.)",
         value="",
         height=80,
-        key="additional_info_input"
     )
     submitted = st.form_submit_button("Send")
 
-# ====================== VOICE INPUT (OUTSIDE THE FORM) ======================
-st.caption("🎤 Want to speak instead of typing?")
-if st.button("🎤 Speak Now (Voice Input)", key="voice_btn", type="secondary"):
-    with st.spinner("🎙️ Listening... Please speak clearly (use Chrome/Edge for best results)"):
-        try:
-            audio_value = st.audio_input(
-                label="Record your additional information",
-                key="voice_recording"
-            )
-            
-            if audio_value is not None:
-                st.audio(audio_value, format="audio/wav")
-                st.success("✅ Voice recorded successfully!")
-                # For now: Ask user to manually type (most reliable)
-                st.info(""" 
-                **Voice recorded successfully!**
-                
-                Please listen to your recording above, then **manually type or copy** the main points into the box above.
-                
-                Example: "I prefer a quiet suburb near the river with good public transport"
-                """)
 
-                # Optional: You can store the audio for future backend transcription
-                st.session_state.last_voice_audio = audio_value
-
-                # Future improvement note
-                st.caption("Auto-transcription coming soon...")
-            else:
-                st.warning("No audio was recorded. Try again.")
-                
-        except Exception as e:
-            st.error(f"Voice input error: {e}. Please type manually.")
 
 # --------------------------
 # Send request to backend
