@@ -9,3 +9,6 @@ google-genai
 pyttsx3
 pytz
 mistralai
+pytest
+fastapi[standard]
+httpx

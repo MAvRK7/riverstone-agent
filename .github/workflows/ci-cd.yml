@@ -1,0 +1,47 @@
+name: CI/CD for Riverstone Agent
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Basic checks (no LLM calls)
+        run: |
+          # Check if backend and frontend can import without errors
+          python -c "import voice_agent; print('✅ Backend imported successfully')"
+          python -c "import app; print('✅ Frontend imported successfully')"
+
+          # Run any existing tests (safe ones only)
+          export CI=true
+          python -m pytest tests/ -q --tb=no
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+
+    steps:
+      - name: Trigger Deploy on Render
+        run: |
+          echo "Triggering deploy on Render..."
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
+          echo "✅ Deploy triggered successfully"
