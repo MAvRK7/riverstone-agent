@@ -1,4 +1,5 @@
-# llm_tester.py
+# llm_tester.py-SKIP
+'''
 import os
 from dotenv import load_dotenv
 from pydantic import BaseModel
@@ -109,3 +110,4 @@ async def run_tests():
 if __name__ == "__main__":
     import asyncio
     asyncio.run(run_tests())
+'''

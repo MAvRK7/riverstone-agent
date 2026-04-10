@@ -32,7 +32,7 @@ jobs:
 
           # Run any existing tests (safe ones only)
           export CI=true
-          python -m pytest tests/ -q --tb=no
+          python -m pytest tests/ -q --tb=no -r s
 
   deploy:
     needs: test

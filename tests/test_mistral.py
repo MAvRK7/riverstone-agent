@@ -1,5 +1,6 @@
 import os
 import asyncio
+import pytest
 from dotenv import load_dotenv
 from pydantic import BaseModel
 from mistralai.client import Mistral
@@ -11,8 +12,8 @@ load_dotenv()
 # =========================
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 
-if not MISTRAL_API_KEY:
-    raise ValueError("❌ MISTRAL_API_KEY is not set in your .env file")
+if not os.getenv("MISTRAL_API_KEY"):
+    pytest.skip("Skipping Mistral tests in CI (no API key)", allow_module_level=True)
 
 # Use the best model (change to "mistral-medium-latest" if you want cheaper)
 MISTRAL_MODEL = "mistral-large-latest"
