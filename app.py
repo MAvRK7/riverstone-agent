@@ -26,13 +26,19 @@ def iso_to_readable(iso_str):
 # --------------------------
 load_dotenv()
 # Use Streamlit secrets (preferred for deployed version) with fallback
-if "api" in st.secrets:
-    BACKEND_URL = st.secrets["api"]["BASE_URL"].rstrip("/") + "/call"
-else:
-    # Fallback for local .env
-    BACKEND_URL = os.getenv("BACKEND_URL", "https://riverstone-agent.onrender.com/call")
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
+def get_backend_url():
+    try:
+        return st.secrets["api"]["BASE_URL"].rstrip("/") + "/call"
+    except KeyError:
+        return os.getenv("BACKEND_URL", "https://riverstone-agent.onrender.com/call")
+    except Exception as e:
+        # Optional: log unexpected issues
+        print(f"Secrets error: {e}")
+        return os.getenv("BACKEND_URL", "https://riverstone-agent.onrender.com/call")
+
+BACKEND_URL = get_backend_url()
+
+
 BACKEND_API_KEY = os.getenv("BACKEND_API_KEY")  # Optional backend auth
 
 def play_agent_audio_from_base64(audio_base64: str):
