@@ -26,7 +26,7 @@ MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 
 if not GEMINI_API_KEY and not MISTRAL_API_KEY:
-    raise ValueError("Set GEMINI_API_KEY and ELEVENLABS_API_KEY")
+    raise ValueError("Set GEMINI_API_KEY and/or MISTRAL_API_KEY in .env to run the agent")
 
 #Gemini Client
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
