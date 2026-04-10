@@ -4,3 +4,4 @@ pytz
 fastapi[standard]
 httpx
 google-genai
+mistralai
