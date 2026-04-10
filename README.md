@@ -49,6 +49,7 @@ The agent can:
 
 ## Project Structure
 
+```text
 mavrk7-riverstone-agent/
 ├── app.py                    # Streamlit frontend
 ├── voice_agent.py            # FastAPI backend
@@ -60,6 +61,7 @@ mavrk7-riverstone-agent/
 │   ├── llm_tester.py
 │   └── test_mistral.py
 └── .github/workflows/        # CI/CD pipelines
+```
 
 ---
 
