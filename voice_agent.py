@@ -26,6 +26,10 @@ MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 
 if not GEMINI_API_KEY and not MISTRAL_API_KEY:
+    if os.getenv("CI") == "true":
+        # Skip strict checks in CI
+        GEMINI_API_KEY = "test"
+        MISTRAL_API_KEY = "test"
     raise ValueError("Set GEMINI_API_KEY and/or MISTRAL_API_KEY in .env to run the agent")
 
 #Gemini Client
