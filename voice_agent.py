@@ -30,7 +30,8 @@ if not GEMINI_API_KEY and not MISTRAL_API_KEY:
         # Skip strict checks in CI
         GEMINI_API_KEY = "test"
         MISTRAL_API_KEY = "test"
-    raise ValueError("Set GEMINI_API_KEY and/or MISTRAL_API_KEY in .env to run the agent")
+    else:
+        raise ValueError("Set GEMINI_API_KEY and/or MISTRAL_API_KEY in .env to run the agent")
 
 #Gemini Client
 gemini_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
