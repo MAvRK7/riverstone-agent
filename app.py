@@ -315,11 +315,8 @@ if st.session_state.get("follow_up_mode", False):
                     resp = requests.post(BACKEND_URL, json=follow_up_data, headers=headers, timeout=30)
                     resp.raise_for_status()
                     new_result = resp.json()
-                    st.session_state.followup_text = new_result.get("response", "No response.")
-
-                    # Show follow-up response
-                    st.subheader("Agent Follow-up Response")
-                    st.write(st.session_state.followup_text)
+                    # overwrite main agent response
+                    st.session_state.agent_text = new_result.get("response", "No response.")
 
 
 
@@ -328,7 +325,7 @@ if st.session_state.get("follow_up_mode", False):
                     # -----------------------
                     st.session_state.chat_history.append({
                     "user": follow_up_text,
-                    "agent": st.session_state.followup_text
+                    "agent": new_result.get("response", "No response.")
                     })
 
                     # Reset follow-up mode
